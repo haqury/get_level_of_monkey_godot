@@ -1,0 +1,69 @@
+{
+  "minigame": {
+    "monkeys": {
+      "count_min": 8,
+      "count_max": 12,
+      "age_distribution": {
+        "1": 0.4,
+        "2": 0.3,
+        "3": 0.2,
+        "4": 0.1
+      },
+      "stats_by_age": {
+        "1": {
+          "throw_speed": 1.0,
+          "accuracy": 0.3,
+          "cooldown": 3.0
+        },
+        "2": {
+          "throw_speed": 1.5,
+          "accuracy": 0.5,
+          "cooldown": 2.5
+        },
+        "3": {
+          "throw_speed": 2.0,
+          "accuracy": 0.7,
+          "cooldown": 2.0
+        },
+        "4": {
+          "throw_speed": 2.5,
+          "accuracy": 0.9,
+          "cooldown": 1.5
+        }
+      }
+    },
+    "poop": {
+      "damage": 1,
+      "speed": 300,
+      "lifetime": 5.0
+    },
+    "player_area": {
+      "width": 800,
+      "height": 600
+    }
+  },
+  "progression": {
+    "xp_per_second_survived": 10,
+    "xp_per_dodge": 5,
+    "level_xp_formula": "base * (level ** 1.5)",
+    "level_xp_base": 100,
+    "upgrades": {
+      "max_hp": {
+        "cost_per_level": 50,
+        "value_per_level": 1
+      },
+      "max_energy": {
+        "cost_per_level": 40,
+        "value_per_level": 10
+      },
+      "energy_regen": {
+        "cost_per_level": 60,
+        "value_per_level": 1.0
+      },
+      "move_speed": {
+        "cost_per_level": 70,
+        "value_per_level": 20
+      }
+    }
+  }
+}

@@ -1,0 +1,301 @@
+extends CanvasLayer
+
+var pause_open: bool = false
+var dialog_open: bool = false
+var settings_open: bool = false
+var brainlink_settings_open: bool = false
+
+var _settings_from_pause: bool = false
+var _brainlink_from_pause: bool = false
+var _pause_hidden_for_dialog: bool = false
+
+@onready var hud: Control = $HUD
+@onready var dialog: Control = $Dialog
+@onready var pause: Control = $Pause
+@onready var settings_menu: Control = $SettingsMenu
+@onready var brainlink_settings_menu: Control = $BrainlinkSettingsMenu
+@onready var hp_label: Label = $HUD/Margin/VBox/HPLabel
+@onready var energy_label: Label = $HUD/Margin/VBox/EnergyLabel
+@onready var level_label: Label = $HUD/Margin/VBox/LevelLabel
+@onready var ml_label: Label = $HUD/Margin/VBox/MLLabel
+@onready var timer_label: Label = $HUD/Margin/VBox/TimerLabel
+@onready var top10_panel: Control = $HUD/Top10
+@onready var dialog_name: Label = $Dialog/Panel/VBox/NameLabel
+@onready var dialog_text: Label = $Dialog/Panel/VBox/TextLabel
+@onready var dialog_buttons: VBoxContainer = $Dialog/Panel/VBox/Buttons
+
+var _dialog_callback: Callable
+
+
+func _ready() -> void:
+	layer = 100
+	hud.hide()
+	dialog.hide()
+	pause.hide()
+	top10_panel.hide()
+	timer_label.hide()
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	if not BrainLinkBridge.connection_changed.is_connected(_on_brainlink_connection_changed):
+		BrainLinkBridge.connection_changed.connect(_on_brainlink_connection_changed)
+	if not I18n.locale_changed.is_connected(_on_locale_changed):
+		I18n.locale_changed.connect(_on_locale_changed)
+	settings_menu.closed.connect(_on_settings_closed)
+	brainlink_settings_menu.closed.connect(_on_brainlink_settings_closed)
+	_refresh_pause_menu()
+
+
+func _on_brainlink_connection_changed(_connected: bool) -> void:
+	if hud.visible:
+		refresh_hud()
+
+
+func _on_locale_changed(_locale: String) -> void:
+	_refresh_pause_menu()
+	if hud.visible:
+		refresh_hud()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if settings_open or brainlink_settings_open:
+		return
+	if not GameState.in_game:
+		return
+	if event.is_action_pressed("ui_cancel"):
+		toggle_pause()
+	if event.is_action_pressed("sit_pause") and not dialog_open:
+		toggle_pause()
+
+
+func show_hud() -> void:
+	hud.show()
+	refresh_hud()
+
+
+func hide_hud() -> void:
+	hud.hide()
+
+
+func refresh_hud() -> void:
+	var player := _get_player()
+	if player:
+		hp_label.text = "HP: %d/%d" % [player.hp, player.max_hp]
+		energy_label.text = "%s: %.0f/%.0f" % [I18n.tr_key("hud.energy", "Energy"), player.energy, player.max_energy]
+	level_label.text = "%s: %d  XP: %d" % [I18n.tr_key("hud.level", "Level"), ProgressionSystem.level, ProgressionSystem.current_xp]
+	if not BrainLinkBridge.connected:
+		ml_label.text = I18n.tr_key("hud.brainlink_off", "BrainLink: off")
+		return
+	var pred := InputManager.brainlink_last_event
+	if pred.is_empty() and not InputManager.brainlink_probs.is_empty():
+		var best_k := ""
+		var best_v := -1.0
+		for k in InputManager.brainlink_probs.keys():
+			var pv := float(InputManager.brainlink_probs[k])
+			if pv > best_v:
+				best_v = pv
+				best_k = str(k)
+		pred = best_k
+	var conf := InputManager.brainlink_confidence
+	if conf > 0.0:
+		ml_label.text = I18n.tr_format(
+			"hud.pred_conf",
+			"pred: {pred}  conf: {conf}",
+			{"pred": pred if pred else "—", "conf": "%.2f" % conf},
+		)
+	else:
+		ml_label.text = I18n.tr_format(
+			"hud.pred_conf_dash",
+			"pred: {pred}  conf: —",
+			{"pred": pred if pred else "—"},
+		)
+
+
+func set_survival_timer(seconds: float, visible: bool) -> void:
+	timer_label.visible = visible
+	if visible:
+		timer_label.text = "%s: %.1f" % [I18n.tr_key("minigame.survival", "Survival"), seconds]
+
+
+func show_top10(mode: String) -> void:
+	if GameState.is_client():
+		top10_panel.hide()
+		return
+	top10_panel.show()
+	var list: Label = top10_panel.get_node("List")
+	var lines: PackedStringArray = []
+	var i := 1
+	for run in SaveManager.get_top10(mode, false):
+		lines.append("%d. %s — %.1fs" % [i, run.get("username", "?"), float(run.get("time", 0))])
+		i += 1
+	list.text = "\n".join(lines) if lines.size() > 0 else I18n.tr_key("minigame.no_scores", "No scores")
+
+
+func hide_top10() -> void:
+	top10_panel.hide()
+
+
+func show_dialog(npc_name: String, text: String, options: Array = []) -> void:
+	dialog_open = true
+	_pause_hidden_for_dialog = pause_open and pause.visible
+	if _pause_hidden_for_dialog:
+		pause.hide()
+	dialog.show()
+	dialog_name.text = npc_name
+	dialog_text.text = text
+	for c in dialog_buttons.get_children():
+		c.queue_free()
+	if options.is_empty():
+		var btn := Button.new()
+		btn.text = I18n.tr_key("dialog.continue", "Continue")
+		btn.pressed.connect(_close_dialog)
+		dialog_buttons.add_child(btn)
+	else:
+		for opt in options:
+			var btn2 := Button.new()
+			btn2.text = str(opt.get("text", "OK"))
+			var cb: Callable = opt.get("callback", Callable())
+			btn2.pressed.connect(func(): _on_dialog_option(cb))
+			dialog_buttons.add_child(btn2)
+
+
+func _on_dialog_option(cb: Callable) -> void:
+	dialog_open = false
+	dialog.hide()
+	_restore_pause_after_dialog()
+	if cb.is_valid():
+		cb.call()
+	if not dialog_open:
+		dialog.hide()
+
+
+func _close_dialog() -> void:
+	dialog_open = false
+	dialog.hide()
+	_restore_pause_after_dialog()
+
+
+func _restore_pause_after_dialog() -> void:
+	if _pause_hidden_for_dialog and pause_open and not settings_open:
+		pause.show()
+	_pause_hidden_for_dialog = false
+
+
+func toggle_pause() -> void:
+	if dialog_open:
+		return
+	pause_open = not pause_open
+	pause.visible = pause_open
+	get_tree().paused = pause_open
+	if pause_open:
+		_refresh_pause_menu()
+
+
+func open_pause() -> void:
+	pause_open = true
+	pause.visible = true
+	get_tree().paused = true
+
+
+func close_pause() -> void:
+	pause_open = false
+	pause.visible = false
+	get_tree().paused = false
+
+
+func _on_pause_restart_pressed() -> void:
+	close_pause()
+	if GameState.current_scene_id == "minigame":
+		(get_node("/root/SceneManager") as Node).call("switch_to", "minigame", {"monkey_mode": GameState.monkey_mode})
+
+
+func _on_pause_load_pressed() -> void:
+	close_pause()
+	var data: Variant = SaveManager.load_game()
+	if data != null and typeof(data) == TYPE_DICTIONARY:
+		var save_data: Dictionary = data
+		ProgressionSystem.from_save_dict(save_data)
+		var scene_id: String = str(save_data.get("current_scene", "cave"))
+		(get_node("/root/SceneManager") as Node).call("switch_to", scene_id, {})
+
+
+func _on_pause_settings_pressed() -> void:
+	show_settings(true)
+
+
+func _on_pause_brainlink_pressed() -> void:
+	show_brainlink_settings(true)
+
+
+func _refresh_pause_menu() -> void:
+	var box: VBoxContainer = pause.get_node("Panel/VBox")
+	box.get_node("Restart").text = I18n.tr_key("pause.restart", "Restart")
+	box.get_node("Load").text = I18n.tr_key("pause.load", "Load")
+	box.get_node("Settings").text = I18n.tr_key("pause.settings", "Settings")
+	box.get_node("BrainLink").text = I18n.tr_key("pause.brainlink_settings", "BrainLink")
+	box.get_node("ExitMenu").text = I18n.tr_key("pause.exit", "Exit")
+
+
+func show_settings(from_pause: bool = false) -> void:
+	settings_open = true
+	_settings_from_pause = from_pause or pause_open
+	if _settings_from_pause:
+		pause.hide()
+	if not GameState.in_game:
+		_set_main_menu_underlay(false)
+	dialog.hide()
+	dialog_open = false
+	settings_menu.open(_settings_from_pause)
+
+
+func _on_settings_closed() -> void:
+	settings_open = false
+	if brainlink_settings_open:
+		_settings_from_pause = false
+		return
+	if _settings_from_pause and pause_open and not dialog_open:
+		pause.show()
+	elif not GameState.in_game:
+		_set_main_menu_underlay(true)
+	_settings_from_pause = false
+
+
+func _on_brainlink_settings_closed() -> void:
+	brainlink_settings_open = false
+	if _brainlink_from_pause and pause_open and not dialog_open and not settings_open:
+		pause.show()
+	elif not GameState.in_game:
+		_set_main_menu_underlay(true)
+	_brainlink_from_pause = false
+
+
+func _set_main_menu_underlay(visible_menu: bool) -> void:
+	for node in get_tree().get_nodes_in_group("main_menu_panel"):
+		if node is CanvasItem:
+			(node as CanvasItem).visible = visible_menu
+
+
+func show_brainlink_settings(from_pause: bool = false) -> void:
+	brainlink_settings_open = true
+	_brainlink_from_pause = from_pause or pause_open
+	if settings_open:
+		settings_menu.close_menu()
+		settings_open = false
+	if _brainlink_from_pause:
+		pause.hide()
+	if not GameState.in_game:
+		_set_main_menu_underlay(false)
+	dialog.hide()
+	dialog_open = false
+	brainlink_settings_menu.open(_brainlink_from_pause)
+
+
+func _on_pause_exit_pressed() -> void:
+	close_pause()
+	NetworkManager.shutdown()
+	(get_node("/root/SceneManager") as Node).call("go_to_main_menu")
+
+
+func _get_player() -> Node:
+	var root := get_tree().current_scene
+	if root and root.has_method("get_player"):
+		return root.get_player()
+	return null

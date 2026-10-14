@@ -1,0 +1,18 @@
+{
+	"player": {
+		"cheater_mode": false,
+		"energy_regen_rate": 5.0,
+		"initial_energy": 100.0,
+		"initial_hp": 3.0,
+		"move_cost": 100.0,
+		"move_speed": 5.0,
+		"name": "haosit"
+	},
+	"window": {
+		"fps": 60.0,
+		"fullscreen": true,
+		"height": 900,
+		"title": "Fucking Pickup",
+		"width": 1600
+	}
+}

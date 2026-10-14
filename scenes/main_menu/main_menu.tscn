@@ -1,0 +1,94 @@
+[gd_scene load_steps=2 format=3 uid="uid://cmainmenu01"]
+
+[ext_resource type="Script" uid="uid://dpat4kwo07kfk" path="res://scenes/main_menu/main_menu.gd" id="1"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -220.0
+offset_right = 200.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+text = "Get Level of Monkey"
+horizontal_alignment = 1
+
+[node name="Solo" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Play Solo"
+
+[node name="SoloLoad" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Play Solo (Load)"
+
+[node name="Network" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Network"
+
+[node name="NetworkPanel" type="VBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+
+[node name="Host" type="Button" parent="Panel/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Host LAN"
+
+[node name="HostStart" type="Button" parent="Panel/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Start game (host)"
+
+[node name="JoinHost" type="LineEdit" parent="Panel/VBox"]
+layout_mode = 2
+placeholder_text = "Host IP"
+
+[node name="Join" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Join"
+
+[node name="HostInfo" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+
+[node name="Config" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Config"
+
+[node name="BrainLink" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "BrainLink"
+
+[node name="StatusLabel" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+text = "BrainLink: off"
+
+[node name="Quit" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Quit"
+
+[connection signal="pressed" from="Panel/VBox/Solo" to="." method="_on_solo_pressed"]
+[connection signal="pressed" from="Panel/VBox/SoloLoad" to="." method="_on_solo_load_pressed"]
+[connection signal="pressed" from="Panel/VBox/Network" to="." method="_on_network_pressed"]
+[connection signal="pressed" from="Panel/VBox/NetworkPanel/Host" to="." method="_on_host_pressed"]
+[connection signal="pressed" from="Panel/VBox/NetworkPanel/HostStart" to="." method="_on_host_start_pressed"]
+[connection signal="pressed" from="Panel/VBox/Join" to="." method="_on_join_pressed"]
+[connection signal="pressed" from="Panel/VBox/Config" to="." method="_on_config_pressed"]
+[connection signal="pressed" from="Panel/VBox/BrainLink" to="." method="_on_brainlink_pressed"]
+[connection signal="pressed" from="Panel/VBox/Quit" to="." method="_on_quit_pressed"]

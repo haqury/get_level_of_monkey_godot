@@ -1,0 +1,141 @@
+[gd_scene load_steps=13 format=3 uid="uid://ccave01"]
+
+[ext_resource type="Script" path="res://scenes/cave/cave.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/scene_sprite.gd" id="2"]
+[ext_resource type="Texture2D" path="res://assets/sprites/cave/cave_floor.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/sprites/cave/cave_wall.png" id="4"]
+[ext_resource type="PackedScene" uid="uid://cexitarea01" path="res://scenes/world/exit_area.tscn" id="5"]
+[ext_resource type="Texture2D" path="res://assets/sprites/cave/cave_door.png" id="6"]
+[ext_resource type="Texture2D" path="res://assets/sprites/cave/cave_exit.png" id="7"]
+[ext_resource type="PackedScene" uid="uid://cnpcbase01" path="res://scenes/npc/npc.tscn" id="8"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_side_seg"]
+size = Vector2(72, 360)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_stop"]
+size = Vector2(36, 144)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hwall"]
+size = Vector2(1680, 72)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_opening"]
+size = Vector2(48, 144)
+
+[node name="Cave" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Background" type="Node2D" parent="."]
+
+[node name="Floor" type="Sprite2D" parent="Background"]
+texture = ExtResource("3")
+script = ExtResource("2")
+size_units = Vector2(70, 36)
+tiled = true
+
+[node name="WallLeft" type="Sprite2D" parent="Background"]
+position = Vector2(-840, 0)
+texture = ExtResource("4")
+script = ExtResource("2")
+size_units = Vector2(3, 36)
+tiled = true
+
+[node name="WallRight" type="Sprite2D" parent="Background"]
+position = Vector2(840, 0)
+texture = ExtResource("4")
+script = ExtResource("2")
+size_units = Vector2(3, 36)
+tiled = true
+
+[node name="WallTop" type="Sprite2D" parent="Background"]
+position = Vector2(0, 432)
+texture = ExtResource("4")
+script = ExtResource("2")
+size_units = Vector2(70, 3)
+tiled = true
+
+[node name="WallBottom" type="Sprite2D" parent="Background"]
+position = Vector2(0, -432)
+texture = ExtResource("4")
+script = ExtResource("2")
+size_units = Vector2(70, 3)
+tiled = true
+
+[node name="Walls" type="StaticBody2D" parent="."]
+collision_mask = 0
+
+[node name="LeftUpper" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-840, -252)
+shape = SubResource("RectangleShape2D_side_seg")
+
+[node name="LeftLower" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-840, 252)
+shape = SubResource("RectangleShape2D_side_seg")
+
+[node name="LeftStop" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-858, 0)
+shape = SubResource("RectangleShape2D_stop")
+
+[node name="RightUpper" type="CollisionShape2D" parent="Walls"]
+position = Vector2(840, -252)
+shape = SubResource("RectangleShape2D_side_seg")
+
+[node name="RightLower" type="CollisionShape2D" parent="Walls"]
+position = Vector2(840, 252)
+shape = SubResource("RectangleShape2D_side_seg")
+
+[node name="RightStop" type="CollisionShape2D" parent="Walls"]
+position = Vector2(858, 0)
+shape = SubResource("RectangleShape2D_stop")
+
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 432)
+shape = SubResource("RectangleShape2D_hwall")
+
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, -432)
+shape = SubResource("RectangleShape2D_hwall")
+
+[node name="Exits" type="Node2D" parent="."]
+
+[node name="ToKitchen" parent="Exits" instance=ExtResource("5")]
+position = Vector2(768, 0)
+exit_name = "to_kitchen"
+target_scene = "kitchen"
+
+[node name="CollisionShape2D" parent="Exits/ToKitchen"]
+position = Vector2(24, 0)
+shape = SubResource("RectangleShape2D_opening")
+
+[node name="DoorMarker" type="Sprite2D" parent="Exits/ToKitchen"]
+z_index = 1
+position = Vector2(18, 0)
+texture = ExtResource("6")
+script = ExtResource("2")
+size_units = Vector2(2.5, 5)
+
+[node name="ToOutside" parent="Exits" instance=ExtResource("5")]
+position = Vector2(-768, 0)
+exit_name = "to_outside"
+target_scene = "minigame"
+
+[node name="CollisionShape2D" parent="Exits/ToOutside"]
+position = Vector2(-24, 0)
+shape = SubResource("RectangleShape2D_opening")
+
+[node name="ExitMarker" type="Sprite2D" parent="Exits/ToOutside"]
+z_index = 1
+position = Vector2(-18, 0)
+texture = ExtResource("7")
+script = ExtResource("2")
+size_units = Vector2(2.5, 5)
+
+[node name="NPCs" type="Node2D" parent="."]
+
+[node name="Father" parent="NPCs" instance=ExtResource("8")]
+position = Vector2(-240, 240)
+npc_id = "father"
+display_name = "Father"
+display_name_i18n_key = "npc.father.name"
+dialog_keys = PackedStringArray("npc.father.dialog1", "npc.father.dialog2")
+texture_path = "res://assets/sprites/npc/father.png"
+sprite_size_units = 1.2
