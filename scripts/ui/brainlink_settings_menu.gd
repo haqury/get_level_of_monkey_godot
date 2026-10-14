@@ -285,6 +285,8 @@ func _refresh_status(_connected: bool = false) -> void:
 		_status.text = I18n.tr_key("hud.brainlink_off", "BrainLink: off")
 	elif BrainLinkBridge.connected:
 		_status.text = I18n.tr_key("brainlink_status.ready", "Connected")
+	elif BrainLinkBridge.shm_attached:
+		_status.text = I18n.tr_key("brainlink_status.waiting_client", "Waiting for BrainLink Client")
 	else:
 		_status.text = I18n.tr_key("brainlink_status.waiting_shared_memory", "Waiting...")
 	_btn_disconnect.disabled = not BrainLinkBridge.connected

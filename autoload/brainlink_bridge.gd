@@ -3,15 +3,21 @@ extends Node
 signal connection_changed(connected: bool)
 
 const CMD_QUEUE_USER_PATH := "user://brainlink_cmd_queue.json"
+const SHIM_PID_USER_PATH := "user://brainlink_shim.pid"
 const HEARTBEAT_STALE_MS := 3000
+const SHIM_STARTUP_GRACE_MS := 5000
 
 var connected: bool = false
+var shm_attached: bool = false
+var client_active: bool = false
 var _poll_accum: float = 0.0
 var _shim_pid: int = -1
+var _shim_we_spawned: bool = false
+var _shim_spawn_unix_ms: int = 0
 var _connect_requested: bool = false
+var _connect_enqueued: bool = false
 var _reconnect_cooldown: float = 0.0
 var _last_heartbeat_ms: int = 0
-var _shim_start_attempts: int = 0
 
 
 func _ready() -> void:
@@ -23,23 +29,32 @@ func _ready() -> void:
 		call_deferred("ensure_ready")
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_shutdown_shim()
+	elif what == NOTIFICATION_PREDELETE:
+		_shutdown_shim()
+
+
 func _process(delta: float) -> void:
 	if OS.get_name() != "Windows" or not _is_enabled():
 		return
+	_poll_shim()
 	_ensure_shim_alive()
 	_start_shim_if_needed()
-	if _connect_requested:
+	if _connect_requested and not _connect_enqueued:
 		_enqueue_connect_command()
+		_connect_enqueued = true
 	_reconnect_cooldown = maxf(0.0, _reconnect_cooldown - delta)
 	var interval := float(ConfigLoader.game_config.get("brainlink", {}).get("check_interval", 0.016))
 	_poll_accum += delta
 	if _poll_accum < interval:
 		return
 	_poll_accum = 0.0
-	_poll_shim()
 	if not connected and _reconnect_cooldown <= 0.0:
-		_connect_requested = true
-		_enqueue_connect_command()
+		if _is_shim_heartbeat_fresh():
+			_connect_requested = true
+			_connect_enqueued = false
 		_reconnect_cooldown = 2.0
 
 
@@ -55,6 +70,7 @@ func ensure_ready() -> void:
 	if OS.get_name() != "Windows" or not _is_enabled():
 		return
 	_connect_requested = true
+	_connect_enqueued = false
 	_start_shim_if_needed()
 
 
@@ -62,13 +78,14 @@ func try_connect() -> bool:
 	if OS.get_name() != "Windows":
 		return false
 	_connect_requested = true
+	_connect_enqueued = false
 	_start_shim_if_needed()
-	_enqueue_connect_command()
 	return true
 
 
 func disconnect_shm() -> void:
 	_connect_requested = false
+	_connect_enqueued = false
 	_enqueue_shim_command({"cmd": "disconnect"})
 	_set_connected(false)
 
@@ -150,10 +167,13 @@ func _resolve_client_exe() -> String:
 
 
 func _start_shim_if_needed() -> void:
-	if _shim_pid > 0 and _is_shim_heartbeat_fresh():
+	if _is_shim_heartbeat_fresh():
 		return
-	if _shim_start_attempts > 8:
+	if _in_shim_startup_grace():
 		return
+	if _shim_we_spawned and _shim_pid > 0:
+		return
+	_cleanup_stale_shim_pid_file()
 	var script_path := ProjectSettings.globalize_path("res://tools/brainlink_shim.py")
 	if not FileAccess.file_exists(script_path):
 		push_warning("BrainLink shim script missing")
@@ -161,21 +181,39 @@ func _start_shim_if_needed() -> void:
 	var status_global := ProjectSettings.globalize_path("user://brainlink_status.json")
 	var memory_name := str(ConfigLoader.game_config.get("brainlink", {}).get("memory_name", "brainlink_data"))
 	var args := PackedStringArray([script_path, status_global, memory_name])
-	_shim_pid = OS.create_process("python", args, false)
-	if _shim_pid <= 0:
-		_shim_pid = OS.create_process("py", PackedStringArray(["-3"]) + args, false)
-	if _shim_pid > 0:
-		_shim_start_attempts += 1
-		_connect_requested = true
+	var pid := OS.create_process("python", args, false)
+	if pid <= 0:
+		pid = OS.create_process("py", PackedStringArray(["-3"]) + args, false)
+	if pid <= 0:
+		return
+	_shim_pid = pid
+	_shim_we_spawned = true
+	_shim_spawn_unix_ms = int(Time.get_unix_time_from_system() * 1000.0)
+	_connect_requested = true
+	_connect_enqueued = false
 
 
 func _ensure_shim_alive() -> void:
-	if _shim_pid <= 0:
-		return
 	if _is_shim_heartbeat_fresh():
 		return
+	if _in_shim_startup_grace():
+		return
+	if not _shim_we_spawned:
+		return
+	_kill_recorded_shim()
 	_shim_pid = -1
+	_shim_we_spawned = false
+	_shim_spawn_unix_ms = 0
 	_set_connected(false)
+	_connect_requested = true
+	_connect_enqueued = false
+
+
+func _in_shim_startup_grace() -> bool:
+	if _shim_spawn_unix_ms <= 0:
+		return false
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
+	return now_ms - _shim_spawn_unix_ms < SHIM_STARTUP_GRACE_MS
 
 
 func _is_shim_heartbeat_fresh() -> bool:
@@ -224,11 +262,19 @@ func _poll_shim() -> void:
 func apply_shim_status(data: Dictionary) -> void:
 	_last_heartbeat_ms = int(data.get("heartbeat_ms", 0))
 	var was := connected
-	var shm_ok := bool(data.get("connected", false)) and _is_shim_heartbeat_fresh()
-	_set_connected(shm_ok)
-	InputManager.brainlink_confidence = float(data.get("confidence", 0.0))
-	InputManager.brainlink_probs = data.get("probs", {}) if typeof(data.get("probs", {})) == TYPE_DICTIONARY else {}
-	InputManager.set_brainlink_event(str(data.get("event", "")))
+	shm_attached = bool(data.get("shm_attached", false))
+	client_active = bool(data.get("client_active", false)) and _is_shim_heartbeat_fresh()
+	_set_connected(client_active)
+	if client_active:
+		InputManager.brainlink_confidence = float(data.get("confidence", 0.0))
+		InputManager.brainlink_probs = (
+			data.get("probs", {}) if typeof(data.get("probs", {})) == TYPE_DICTIONARY else {}
+		)
+		InputManager.set_brainlink_event(str(data.get("event", "")))
+	else:
+		InputManager.brainlink_confidence = 0.0
+		InputManager.brainlink_probs = {}
+		InputManager.set_brainlink_event("")
 	if was != connected:
 		connection_changed.emit(connected)
 
@@ -239,3 +285,50 @@ func _set_connected(value: bool) -> void:
 	connected = value
 	if connected:
 		_connect_requested = false
+		_connect_enqueued = false
+
+
+func _shutdown_shim() -> void:
+	if not _shim_we_spawned:
+		return
+	_kill_recorded_shim()
+	_shim_pid = -1
+	_shim_we_spawned = false
+	_shim_spawn_unix_ms = 0
+	_remove_shim_pid_file()
+
+
+func _kill_recorded_shim() -> void:
+	var pid := _read_shim_pid_file()
+	if pid <= 0:
+		pid = _shim_pid
+	if pid <= 0:
+		return
+	if OS.get_name() == "Windows":
+		OS.execute("taskkill", PackedStringArray(["/F", "/PID", str(pid)]), [], true, true)
+	else:
+		OS.kill(pid)
+
+
+func _read_shim_pid_file() -> int:
+	if not FileAccess.file_exists(SHIM_PID_USER_PATH):
+		return -1
+	var text := FileAccess.get_file_as_string(SHIM_PID_USER_PATH).strip_edges()
+	if text.is_empty():
+		return -1
+	return int(text)
+
+
+func _remove_shim_pid_file() -> void:
+	if FileAccess.file_exists(SHIM_PID_USER_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SHIM_PID_USER_PATH))
+
+
+func _cleanup_stale_shim_pid_file() -> void:
+	if _is_shim_heartbeat_fresh():
+		return
+	var pid := _read_shim_pid_file()
+	if pid <= 0:
+		return
+	_kill_recorded_shim()
+	_remove_shim_pid_file()

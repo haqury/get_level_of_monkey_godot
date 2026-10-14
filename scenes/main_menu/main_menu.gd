@@ -83,6 +83,8 @@ func _update_brainlink_status() -> void:
 		status_label.text = I18n.tr_key("hud.brainlink_off", "BrainLink: off")
 	elif BrainLinkBridge.connected:
 		status_label.text = I18n.tr_key("hud.brainlink_connected", "BrainLink: connected")
+	elif BrainLinkBridge.shm_attached:
+		status_label.text = I18n.tr_key("brainlink_status.waiting_client", "BrainLink: waiting for client")
 	else:
 		status_label.text = I18n.tr_key("brainlink_status.waiting_shared_memory", "Waiting for Shared Memory...")
 

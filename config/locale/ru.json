@@ -38,6 +38,7 @@
     "enabling_shared_memory": "Включение Shared Memory...",
     "connecting": "Подключение...",
     "waiting_shared_memory": "Ожидание Shared Memory...",
+    "waiting_client": "Ожидание BrainLink Client...",
     "restart_failed": "Ошибка перезапуска",
     "restart_failed_info": "Не удалось перезапустить BrainLinkClient. Включите Shared Memory вручную.",
     "searching": "Поиск...",

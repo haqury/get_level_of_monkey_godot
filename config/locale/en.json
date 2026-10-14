@@ -38,6 +38,7 @@
     "enabling_shared_memory": "Enabling Shared Memory...",
     "connecting": "Connecting...",
     "waiting_shared_memory": "Waiting for Shared Memory...",
+    "waiting_client": "Waiting for BrainLink Client...",
     "restart_failed": "Restart Failed",
     "restart_failed_info": "Could not restart BrainLinkClient. Enable Shared Memory manually.",
     "searching": "Searching...",

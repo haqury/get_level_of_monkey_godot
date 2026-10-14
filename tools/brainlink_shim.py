@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,8 @@ ML_PROB_STOP = 30
 ML_STATS_SIZE = 31 * 4
 
 GROUND_TRUTH_COMMAND_TYPE = 2
+CLIENT_STALE_SECONDS = 22.0
+STUCK_EVENT_SECONDS = 2.5
 
 INT32_MAX = 2147483647
 INT32_MIN = -2147483648
@@ -93,6 +96,36 @@ def _send_ground_truth(shm, event_name: str, log_path: Path | None = None) -> bo
     ok = _send_command(shm, GROUND_TRUTH_COMMAND_TYPE, code)
     _log_send(log_path, event_name, ok)
     return ok
+
+
+class _ClientActivityWatch:
+    """Live client updates SHM; after exit values freeze (e.g. stuck ml)."""
+
+    def __init__(self) -> None:
+        self._last_sig: tuple | None = None
+        self._last_change = time.time()
+
+    def reset(self) -> None:
+        self._last_sig = None
+        self._last_change = time.time()
+
+    def evaluate(self, ev_code: int, conf: float, probs: dict) -> tuple[bool, str]:
+        sig = (
+            ev_code,
+            int(conf * 1000.0),
+            tuple(int(float(probs.get(k, 0.0)) * 1000.0) for k in ("ml", "mr", "mu", "md", "stop")),
+        )
+        now = time.time()
+        if self._last_sig != sig:
+            self._last_sig = sig
+            self._last_change = now
+        age = now - self._last_change
+        event_name = CODE_TO_EVENT.get(ev_code, "")
+        stuck_direction = ev_code != 0 and age > STUCK_EVENT_SECONDS
+        client_active = age < CLIENT_STALE_SECONDS and not stuck_direction
+        if stuck_direction or not client_active:
+            event_name = ""
+        return client_active, event_name
 
 
 def _read_ml_stats(shm) -> tuple[float, dict]:
@@ -235,15 +268,27 @@ def main() -> None:
     queue_path = status_path.parent / "brainlink_cmd_queue.json"
     cmd_path = status_path.parent / "brainlink_cmd.json"
     log_path = status_path.parent / "brainlink_shim.log"
+    pid_path = status_path.parent / "brainlink_shim.pid"
+    try:
+        pid_path.write_text(str(os.getpid()), encoding="utf-8")
+    except Exception:
+        pass
 
+    client_watch = _ClientActivityWatch()
     shm = _attach_shm(memory_name)
+    had_shm = shm is not None
     while True:
         shm, memory_name = _drain_command_queue(queue_path, cmd_path, shm, memory_name, log_path)
         if shm is None:
             shm = _attach_shm(memory_name)
+        if (shm is not None) != had_shm:
+            client_watch.reset()
+            had_shm = shm is not None
 
         status = {
-            "connected": shm is not None,
+            "shm_attached": shm is not None,
+            "client_active": False,
+            "connected": False,
             "event": "",
             "confidence": 0.0,
             "probs": {},
@@ -251,18 +296,23 @@ def main() -> None:
         }
         if shm:
             try:
-                ev = read_int32(shm, EVENT_CODE_OFF)
-                status["event"] = CODE_TO_EVENT.get(ev, "")
+                ev_code = read_int32(shm, EVENT_CODE_OFF)
                 conf, probs = _read_ml_stats(shm)
-                status["confidence"] = conf
-                status["probs"] = probs
+                client_active, event_name = client_watch.evaluate(ev_code, conf, probs)
+                status["client_active"] = client_active
+                status["connected"] = client_active
+                status["event"] = event_name
+                status["confidence"] = conf if client_active else 0.0
+                status["probs"] = probs if client_active else {}
             except Exception:
-                status["connected"] = False
+                status["shm_attached"] = False
                 try:
                     shm.close()
                 except Exception:
                     pass
                 shm = None
+                had_shm = False
+                client_watch.reset()
         try:
             status_path.write_text(json.dumps(status), encoding="utf-8")
         except Exception:
