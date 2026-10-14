@@ -172,6 +172,12 @@
     "mode_ns": "North-South (monkeys walk along top and bottom edges)",
     "mode_we": "West-East (monkeys walk along left and right edges)",
     "top10": "Top 10",
-    "system": "System"
+    "system": "System",
+    "survival": "Survival",
+    "no_scores": "No scores",
+    "game_over_title": "Game over",
+    "restart": "Restart minigame",
+    "new_game": "New game",
+    "defeated_wait": "Down — waiting for revival"
   }
 }

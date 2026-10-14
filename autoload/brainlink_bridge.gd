@@ -2,14 +2,20 @@ extends Node
 
 signal connection_changed(connected: bool)
 
+const CMD_QUEUE_USER_PATH := "user://brainlink_cmd_queue.json"
+const HEARTBEAT_STALE_MS := 3000
+
 var connected: bool = false
 var _poll_accum: float = 0.0
 var _shim_pid: int = -1
 var _connect_requested: bool = false
 var _reconnect_cooldown: float = 0.0
+var _last_heartbeat_ms: int = 0
+var _shim_start_attempts: int = 0
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	if OS.get_name() != "Windows":
 		return
 	if _is_enabled():
@@ -20,9 +26,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if OS.get_name() != "Windows" or not _is_enabled():
 		return
+	_ensure_shim_alive()
 	_start_shim_if_needed()
-	if _connect_requested and _shim_pid > 0:
-		_request_connect()
+	if _connect_requested:
+		_enqueue_connect_command()
 	_reconnect_cooldown = maxf(0.0, _reconnect_cooldown - delta)
 	var interval := float(ConfigLoader.game_config.get("brainlink", {}).get("check_interval", 0.016))
 	_poll_accum += delta
@@ -30,13 +37,18 @@ func _process(delta: float) -> void:
 		return
 	_poll_accum = 0.0
 	_poll_shim()
-	if not connected and _reconnect_cooldown <= 0.0 and _shim_pid > 0:
-		_request_connect()
+	if not connected and _reconnect_cooldown <= 0.0:
+		_connect_requested = true
+		_enqueue_connect_command()
 		_reconnect_cooldown = 2.0
 
 
 func _is_enabled() -> bool:
 	return bool(ConfigLoader.game_config.get("brainlink", {}).get("enabled", false))
+
+
+func can_send_ground_truth() -> bool:
+	return _is_enabled() and OS.get_name() == "Windows"
 
 
 func ensure_ready() -> void:
@@ -51,20 +63,32 @@ func try_connect() -> bool:
 		return false
 	_connect_requested = true
 	_start_shim_if_needed()
-	_request_connect()
+	_enqueue_connect_command()
 	return true
 
 
 func disconnect_shm() -> void:
 	_connect_requested = false
-	_write_shim({"cmd": "disconnect"})
+	_enqueue_shim_command({"cmd": "disconnect"})
 	_set_connected(false)
 
 
-func send_event(event_code: String, command_type: int = 1) -> void:
-	if not connected or event_code.is_empty():
+func send_ground_truth(event_code: String) -> void:
+	if not can_send_ground_truth() or event_code.is_empty():
 		return
-	_write_shim({
+	if event_code not in ["ml", "mr", "mu", "md", "stop", "ne"]:
+		return
+	_start_shim_if_needed()
+	_enqueue_shim_command({"cmd": "send_ground_truth", "event_code": event_code})
+
+
+func send_event(event_code: String, command_type: int = 1) -> void:
+	if command_type == 2:
+		send_ground_truth(event_code)
+		return
+	if not can_send_ground_truth() or event_code.is_empty():
+		return
+	_enqueue_shim_command({
 		"cmd": "send_event",
 		"event_code": event_code,
 		"command_type": command_type,
@@ -72,7 +96,7 @@ func send_event(event_code: String, command_type: int = 1) -> void:
 
 
 func send_minigame_event(_event_name: String) -> void:
-	if not connected:
+	if not can_send_ground_truth():
 		return
 	var bl: Dictionary = ConfigLoader.game_config.get("brainlink", {})
 	if not bool(bl.get("send_to_ml", false)):
@@ -82,15 +106,15 @@ func send_minigame_event(_event_name: String) -> void:
 		return
 	if InputManager.is_using_brainlink():
 		return
-	_write_shim({"cmd": "minigame_event", "keyboard_event": ev})
+	send_ground_truth(ev)
 
 
 func send_config_command(command_type: int) -> void:
-	if not connected:
+	if not can_send_ground_truth():
 		return
 	if command_type < 3 or command_type > 9:
 		return
-	_write_shim({"cmd": "config_command", "command_type": command_type})
+	_enqueue_shim_command({"cmd": "config_command", "command_type": command_type})
 
 
 func launch_client() -> void:
@@ -126,26 +150,67 @@ func _resolve_client_exe() -> String:
 
 
 func _start_shim_if_needed() -> void:
-	if _shim_pid > 0:
+	if _shim_pid > 0 and _is_shim_heartbeat_fresh():
+		return
+	if _shim_start_attempts > 8:
 		return
 	var script_path := ProjectSettings.globalize_path("res://tools/brainlink_shim.py")
 	if not FileAccess.file_exists(script_path):
+		push_warning("BrainLink shim script missing")
 		return
-	_shim_pid = OS.create_process("python", PackedStringArray([script_path]), false)
+	var status_global := ProjectSettings.globalize_path("user://brainlink_status.json")
+	var memory_name := str(ConfigLoader.game_config.get("brainlink", {}).get("memory_name", "brainlink_data"))
+	var args := PackedStringArray([script_path, status_global, memory_name])
+	_shim_pid = OS.create_process("python", args, false)
+	if _shim_pid <= 0:
+		_shim_pid = OS.create_process("py", PackedStringArray(["-3"]) + args, false)
+	if _shim_pid > 0:
+		_shim_start_attempts += 1
+		_connect_requested = true
 
 
-func _request_connect() -> void:
-	_write_shim({
+func _ensure_shim_alive() -> void:
+	if _shim_pid <= 0:
+		return
+	if _is_shim_heartbeat_fresh():
+		return
+	_shim_pid = -1
+	_set_connected(false)
+
+
+func _is_shim_heartbeat_fresh() -> bool:
+	if _last_heartbeat_ms <= 0:
+		return false
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0)
+	return now_ms - _last_heartbeat_ms <= HEARTBEAT_STALE_MS
+
+
+func _enqueue_connect_command() -> void:
+	_enqueue_shim_command({
 		"cmd": "connect",
 		"memory_name": str(ConfigLoader.game_config.get("brainlink", {}).get("memory_name", "brainlink_data")),
 		"status_path": ProjectSettings.globalize_path("user://brainlink_status.json"),
-		"cmd_path": ProjectSettings.globalize_path("user://brainlink_cmd.json"),
 	})
 
 
-func _poll_shim() -> void:
-	if _shim_pid <= 0:
+func _enqueue_shim_command(payload: Dictionary) -> void:
+	if not FileAccess.file_exists(ProjectSettings.globalize_path("res://tools/brainlink_shim.py")):
 		return
+	var queue: Array = []
+	if FileAccess.file_exists(CMD_QUEUE_USER_PATH):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(CMD_QUEUE_USER_PATH))
+		if typeof(parsed) == TYPE_ARRAY:
+			queue = parsed
+	queue.append(payload)
+	const MAX_QUEUE := 128
+	if queue.size() > MAX_QUEUE:
+		queue = queue.slice(queue.size() - MAX_QUEUE)
+	var f := FileAccess.open(CMD_QUEUE_USER_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(queue))
+
+
+func _poll_shim() -> void:
 	if not FileAccess.file_exists("user://brainlink_status.json"):
 		return
 	var f := FileAccess.open("user://brainlink_status.json", FileAccess.READ)
@@ -156,17 +221,11 @@ func _poll_shim() -> void:
 		apply_shim_status(parsed)
 
 
-func _write_shim(payload: Dictionary) -> void:
-	if not FileAccess.file_exists(ProjectSettings.globalize_path("res://tools/brainlink_shim.py")):
-		return
-	var f := FileAccess.open("user://brainlink_cmd.json", FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(payload))
-
-
 func apply_shim_status(data: Dictionary) -> void:
+	_last_heartbeat_ms = int(data.get("heartbeat_ms", 0))
 	var was := connected
-	_set_connected(bool(data.get("connected", false)))
+	var shm_ok := bool(data.get("connected", false)) and _is_shim_heartbeat_fresh()
+	_set_connected(shm_ok)
 	InputManager.brainlink_confidence = float(data.get("confidence", 0.0))
 	InputManager.brainlink_probs = data.get("probs", {}) if typeof(data.get("probs", {})) == TYPE_DICTIONARY else {}
 	InputManager.set_brainlink_event(str(data.get("event", "")))

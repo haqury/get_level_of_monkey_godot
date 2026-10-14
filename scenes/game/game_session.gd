@@ -136,7 +136,7 @@ func _on_viewport_size_changed() -> void:
 
 func _physics_process(delta: float) -> void:
 	_scene_transition_cooldown = maxf(0.0, _scene_transition_cooldown - delta)
-	if not GameState.in_game or GameUI.pause_open or GameUI.dialog_open:
+	if not GameState.in_game or GameUI.pause_open or GameUI.dialog_open or GameUI.minigame_game_over_open:
 		return
 	if _current_world and _current_world.has_method("update_world"):
 		_current_world.update_world(delta)

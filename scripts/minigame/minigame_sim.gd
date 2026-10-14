@@ -42,7 +42,13 @@ func get_playable_bounds() -> Dictionary:
 	}
 
 
-func update_sim(delta: float, player_pos: Vector2, on_hit: Callable, on_dodge: Callable) -> void:
+func update_sim(
+	delta: float,
+	player_pos: Vector2,
+	on_hit: Callable,
+	on_dodge: Callable,
+	extra_player_positions: Array = [],
+) -> void:
 	if is_game_over:
 		return
 	game_time += delta
@@ -65,10 +71,10 @@ func update_sim(delta: float, player_pos: Vector2, on_hit: Callable, on_dodge: C
 		_update_poop(p, delta)
 		if not p.get("alive", true):
 			dead_p.append(j)
-		elif _poop_hits_player(p, player_pos):
+		elif _poop_hits_players(p, player_pos, extra_player_positions):
 			p["alive"] = false
 			dead_p.append(j)
-			on_hit.call()
+			on_hit.call(p["pos"])
 			BrainLinkBridge.send_minigame_event("damage_taken")
 		elif p.get("missed", false):
 			on_dodge.call()
@@ -142,9 +148,9 @@ func _update_monkey(m: Dictionary, delta: float, player_pos: Vector2) -> Variant
 	var can_throw := false
 	if in_playable:
 		if monkey_mode == "NorthSouth":
-			can_throw = abs(pos.y - player_pos.y) < PERPENDICULAR_THRESHOLD
+			can_throw = absf(pos.y - player_pos.y) <= PERPENDICULAR_THRESHOLD
 		else:
-			can_throw = abs(pos.x - player_pos.x) < PERPENDICULAR_THRESHOLD
+			can_throw = absf(pos.x - player_pos.x) <= PERPENDICULAR_THRESHOLD
 	if can_throw and float(m["cooldown"]) <= 0.0:
 		m["cooldown"] = float(m["max_cooldown"])
 		return _throw_poop(m, player_pos)
@@ -186,8 +192,13 @@ func _update_poop(p: Dictionary, delta: float) -> void:
 		p["alive"] = false
 
 
-func _poop_hits_player(p: Dictionary, player_pos: Vector2) -> bool:
-	return p["pos"].distance_to(player_pos) < 0.5
+func _poop_hits_players(p: Dictionary, player_pos: Vector2, extras: Array) -> bool:
+	if p["pos"].distance_to(player_pos) < 0.5:
+		return true
+	for e in extras:
+		if e is Vector2 and p["pos"].distance_to(e) < 0.5:
+			return true
+	return false
 
 
 func build_snapshot(host_hp: int, client_hp: int) -> Dictionary:

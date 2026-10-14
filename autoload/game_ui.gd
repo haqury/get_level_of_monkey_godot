@@ -10,6 +10,7 @@ enum EditorUiPreview { HUD, PAUSE, DIALOG, SETTINGS, BRAINLINK }
 			call_deferred("update_editor_ui_preview")
 
 var pause_open: bool = false
+var minigame_game_over_open: bool = false
 var dialog_open: bool = false
 var settings_open: bool = false
 var brainlink_settings_open: bool = false
@@ -106,13 +107,16 @@ func _on_brainlink_connection_changed(_connected: bool) -> void:
 
 
 func _on_locale_changed(_locale: String) -> void:
-	_refresh_pause_menu()
+	if minigame_game_over_open:
+		_refresh_minigame_game_over_menu()
+	else:
+		_refresh_pause_menu()
 	if hud.visible:
 		refresh_hud()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if settings_open or brainlink_settings_open:
+	if settings_open or brainlink_settings_open or minigame_game_over_open:
 		return
 	if not GameState.in_game:
 		return
@@ -134,7 +138,10 @@ func hide_hud() -> void:
 func refresh_hud() -> void:
 	var player := _get_player()
 	if player:
-		hp_label.text = "HP: %d/%d" % [player.hp, player.max_hp]
+		if player.is_defeated and GameState.current_scene_id == "minigame" and not minigame_game_over_open:
+			hp_label.text = I18n.tr_key("minigame.defeated_wait", "Down — waiting for revival")
+		else:
+			hp_label.text = "HP: %d/%d" % [player.hp, player.max_hp]
 		energy_label.text = "%s: %.0f/%.0f" % [I18n.tr_key("hud.energy", "Energy"), player.energy, player.max_energy]
 	level_label.text = "%s: %d  XP: %d" % [I18n.tr_key("hud.level", "Level"), ProgressionSystem.level, ProgressionSystem.current_xp]
 	if not BrainLinkBridge.connected:
@@ -239,7 +246,9 @@ func _restore_pause_after_dialog() -> void:
 
 
 func toggle_pause() -> void:
-	if dialog_open:
+	if dialog_open or minigame_game_over_open:
+		return
+	if _local_player_defeated_in_minigame():
 		return
 	pause_open = not pause_open
 	pause.visible = pause_open
@@ -256,17 +265,38 @@ func open_pause() -> void:
 
 func close_pause() -> void:
 	pause_open = false
+	minigame_game_over_open = false
 	pause.visible = false
 	get_tree().paused = false
+	_set_pause_extra_buttons_visible(true)
+
+
+func show_minigame_game_over() -> void:
+	minigame_game_over_open = true
+	pause_open = true
+	pause.visible = true
+	get_tree().paused = true
+	_refresh_minigame_game_over_menu()
+
+
+func close_minigame_game_over() -> void:
+	if not minigame_game_over_open:
+		return
+	close_pause()
 
 
 func _on_pause_restart_pressed() -> void:
+	var from_game_over := minigame_game_over_open
 	close_pause()
-	if GameState.current_scene_id == "minigame":
-		(get_node("/root/SceneManager") as Node).call("switch_to", "minigame", {"monkey_mode": GameState.monkey_mode})
+	if GameState.current_scene_id != "minigame":
+		return
+	if GameState.is_client() and from_game_over:
+		return
+	(get_node("/root/SceneManager") as Node).call("switch_to", "minigame", {"monkey_mode": GameState.monkey_mode})
 
 
 func _on_pause_load_pressed() -> void:
+	close_minigame_game_over()
 	close_pause()
 	var data: Variant = SaveManager.load_game()
 	if data != null and typeof(data) == TYPE_DICTIONARY:
@@ -285,6 +315,7 @@ func _on_pause_brainlink_pressed() -> void:
 
 
 func _refresh_pause_menu() -> void:
+	_set_pause_extra_buttons_visible(true)
 	var box: VBoxContainer = pause.get_node("Panel/Margin/VBox")
 	var title: Label = box.get_node("PauseTitle") as Label
 	GameUiTheme.title_label_settings(title)
@@ -294,6 +325,34 @@ func _refresh_pause_menu() -> void:
 	box.get_node("Settings").text = I18n.tr_key("pause.settings", "Settings")
 	box.get_node("BrainLink").text = I18n.tr_key("pause.brainlink_settings", "BrainLink")
 	box.get_node("ExitMenu").text = I18n.tr_key("pause.exit", "Exit")
+
+
+func _refresh_minigame_game_over_menu() -> void:
+	_set_pause_extra_buttons_visible(false)
+	var box: VBoxContainer = pause.get_node("Panel/Margin/VBox")
+	var title: Label = box.get_node("PauseTitle") as Label
+	GameUiTheme.title_label_settings(title)
+	title.text = I18n.tr_key("minigame.game_over_title", "Game over")
+	box.get_node("Restart").text = I18n.tr_key("minigame.restart", "Restart minigame")
+	box.get_node("Load").text = I18n.tr_key("pause.load", "Load")
+	box.get_node("ExitMenu").text = I18n.tr_key("minigame.new_game", "New game")
+	var restart_btn: Button = box.get_node("Restart") as Button
+	restart_btn.disabled = GameState.is_client()
+
+
+func _set_pause_extra_buttons_visible(visible_extra: bool) -> void:
+	var box: VBoxContainer = pause.get_node("Panel/Margin/VBox")
+	box.get_node("Settings").visible = visible_extra
+	box.get_node("BrainLink").visible = visible_extra
+	var restart_btn: Button = box.get_node("Restart") as Button
+	restart_btn.disabled = false
+
+
+func _local_player_defeated_in_minigame() -> bool:
+	if GameState.current_scene_id != "minigame":
+		return false
+	var player := _get_player()
+	return player != null and bool(player.get("is_defeated"))
 
 
 func show_settings(from_pause: bool = false) -> void:

@@ -1,0 +1,32 @@
+{
+	"runs": [
+		{
+			"cheater": true,
+			"mode": "NorthSouth",
+			"time": 43.7,
+			"timestamp": "2026-10-14T12:13:41",
+			"username": "haosit"
+		},
+		{
+			"cheater": true,
+			"mode": "NorthSouth",
+			"time": 21.3,
+			"timestamp": "2026-10-14T12:24:50",
+			"username": "haosit"
+		},
+		{
+			"cheater": false,
+			"mode": "NorthSouth",
+			"time": 140.3,
+			"timestamp": "2026-10-14T12:35:24",
+			"username": "haosit"
+		},
+		{
+			"cheater": false,
+			"mode": "NorthSouth",
+			"time": 105.3,
+			"timestamp": "2026-10-14T12:50:49",
+			"username": "haosit"
+		}
+	]
+}

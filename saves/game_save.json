@@ -1,6 +1,6 @@
 {
 	"game": {
-		"current_scene": "kitchen",
+		"current_scene": "cave",
 		"current_xp": 0,
 		"level": 1,
 		"upgrade_levels": {
@@ -10,6 +10,6 @@
 			"move_speed": 0
 		}
 	},
-	"timestamp": "2026-10-14T09:08:16",
+	"timestamp": "2026-10-14T12:49:03",
 	"version": "1.0"
 }

@@ -7,6 +7,8 @@ const SOURCE_NONE := "none"
 const SOURCE_KEYBOARD := "keyboard"
 const SOURCE_BRAINLINK := "brainlink"
 
+const GROUND_TRUTH_RESEND_INTERVAL := 0.35
+
 var keyboard_active: bool = false
 var brainlink_vector: Vector2 = Vector2.ZERO
 var brainlink_confidence: float = 0.0
@@ -23,9 +25,11 @@ var _last_keyboard_event: String = ""
 var _current_keyboard_event: String = ""
 var _keyboard_event_recordable: bool = false
 var _is_using_brainlink: bool = false
-var _last_sent_event: String = ""
 var _cached_move: Vector2 = Vector2.ZERO
 var _action_sit_hold: bool = false
+
+var _held_ground_truth: String = ""
+var _ground_truth_resend_timer: float = 0.0
 
 const EVENT_MAP := {
 	"ml": Vector2.LEFT,
@@ -36,6 +40,7 @@ const EVENT_MAP := {
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_load_brainlink_send_flags()
 
 
@@ -54,14 +59,14 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	keyboard_active = GameControls.get_keyboard_vector().length_squared() > 0.01
 	if GameControls.is_config_action_just_pressed("action"):
 		action_pressed.emit()
 	if GameControls.is_config_action_just_pressed("sit_pause"):
 		sit_pause_pressed.emit()
 	_update_movement_state()
-	_send_outbound_brainlink_events()
+	_send_player_ground_truth(delta)
 
 
 func get_movement_vector() -> Vector2:
@@ -76,9 +81,10 @@ func clear_state() -> void:
 	brainlink_vector = Vector2.ZERO
 	_last_keyboard_event = ""
 	_current_keyboard_event = ""
-	_last_sent_event = ""
 	_cached_move = Vector2.ZERO
 	movement_source = SOURCE_NONE
+	_held_ground_truth = ""
+	_ground_truth_resend_timer = 0.0
 
 
 func set_brainlink_event(code: String) -> void:
@@ -131,7 +137,7 @@ func _update_movement_state() -> void:
 		var pn := pad.normalized()
 		_track_keyboard_from_vector(pn)
 		_keyboard_event_recordable = _is_cardinal(pn)
-		_current_keyboard_event = ""
+		_current_keyboard_event = _last_keyboard_event if _keyboard_event_recordable else ""
 		movement_source = SOURCE_KEYBOARD
 		_is_using_brainlink = false
 		_cached_move = pn
@@ -170,47 +176,57 @@ func _update_movement_state() -> void:
 		_last_keyboard_event = ""
 
 
-func _send_outbound_brainlink_events() -> void:
-	if not BrainLinkBridge.connected:
+## Player ground truth for BrainLink (COMMAND_TYPE=2). Never derived from SHM EVENT_CODE.
+func _send_player_ground_truth(delta: float) -> void:
+	if not BrainLinkBridge.can_send_ground_truth():
 		return
-	if not send_to_history and not send_to_ml:
+	if not send_keyboard_events:
 		return
+	if not send_to_ml and not send_to_history:
+		return
+
+	var label := _manual_player_label()
+	if label.is_empty():
+		if _held_ground_truth.is_empty():
+			return
+		var closed := _held_ground_truth
+		_held_ground_truth = ""
+		_ground_truth_resend_timer = 0.0
+		if closed != "ne":
+			BrainLinkBridge.send_ground_truth("ne")
+		return
+
+	_ground_truth_resend_timer += delta
+	var label_changed := label != _held_ground_truth
+	if label_changed or _ground_truth_resend_timer >= GROUND_TRUTH_RESEND_INTERVAL:
+		_held_ground_truth = label
+		_ground_truth_resend_timer = 0.0
+		BrainLinkBridge.send_ground_truth(label)
+
+
+func _manual_player_label() -> String:
 	if _action_sit_hold:
-		var stop_allowed := send_keyboard_events or send_brainlink_events
-		if stop_allowed and _last_sent_event != "stop":
-			_last_sent_event = "stop"
-			var stop_type := 2 if send_to_ml else 1
-			BrainLinkBridge.send_event("stop", stop_type)
-		return
-	var mv := _cached_move
-	var effective := "ne"
-	if mv.x < -0.01 and absf(mv.y) < 0.01:
-		effective = "ml"
-	elif mv.x > 0.01 and absf(mv.y) < 0.01:
-		effective = "mr"
-	elif mv.y > 0.01 and absf(mv.x) < 0.01:
-		effective = "mu"
-	elif mv.y < -0.01 and absf(mv.x) < 0.01:
-		effective = "md"
-	var allow := false
-	if effective == "ne":
-		allow = true
-	elif movement_source == SOURCE_KEYBOARD and send_keyboard_events and _keyboard_event_recordable:
-		allow = true
-	elif movement_source == SOURCE_BRAINLINK and send_brainlink_events:
-		allow = true
-	if not allow or effective == _last_sent_event:
-		return
-	_last_sent_event = effective
-	var command_type := 2 if send_to_ml else 1
-	BrainLinkBridge.send_event(effective, command_type)
+		return "stop"
+	var kb := GameControls.get_keyboard_vector()
+	if kb.length_squared() > 0.01:
+		return _direction_label_from_vector(kb)
+	if GameControls.gamepad_enabled():
+		var pad := GameControls.get_gamepad_vector()
+		if pad.length_squared() > 0.01:
+			return _direction_label_from_vector(pad)
+	return ""
+
+
+func _direction_label_from_vector(v: Vector2) -> String:
+	if v.length_squared() <= 0.0001:
+		return ""
+	if absf(v.x) >= absf(v.y):
+		return "ml" if v.x < 0.0 else "mr"
+	return "mu" if v.y < 0.0 else "md"
 
 
 func _track_keyboard_from_vector(v: Vector2) -> void:
-	if abs(v.x) >= abs(v.y):
-		_last_keyboard_event = "ml" if v.x < 0 else "mr"
-	else:
-		_last_keyboard_event = "mu" if v.y < 0 else "md"
+	_last_keyboard_event = _direction_label_from_vector(v)
 
 
 func _is_cardinal(v: Vector2) -> bool:

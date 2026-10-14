@@ -24,6 +24,8 @@ ML_PROB_MD = 29
 ML_PROB_STOP = 30
 ML_STATS_SIZE = 31 * 4
 
+GROUND_TRUTH_COMMAND_TYPE = 2
+
 INT32_MAX = 2147483647
 INT32_MIN = -2147483648
 _start_time = time.time()
@@ -54,16 +56,43 @@ def _command_pending(shm) -> bool:
         return False
 
 
-def _send_command(shm, command_type: int, event_code: int) -> bool:
-    if _command_pending(shm):
-        time.sleep(0.001)
-        if _command_pending(shm):
+def _wait_command_idle(shm, timeout_s: float = 0.25) -> bool:
+    deadline = time.time() + timeout_s
+    while _command_pending(shm):
+        if time.time() >= deadline:
             return False
+        time.sleep(0.002)
+    return True
+
+
+def _send_command(shm, command_type: int, event_code: int) -> bool:
+    if not _wait_command_idle(shm):
+        return False
     write_int32(shm, COMMAND_TYPE, command_type)
     write_int32(shm, COMMAND_EVENT_CODE, event_code)
     write_int32(shm, COMMAND_TIMESTAMP, _relative_timestamp_ms())
     write_int32(shm, COMMAND_PENDING, 1)
     return True
+
+
+def _log_send(log_path: Path | None, event_name: str, ok: bool) -> None:
+    if log_path is None:
+        return
+    try:
+        line = f"{time.strftime('%H:%M:%S')} ground_truth {event_name} ok={ok}\n"
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
+
+
+def _send_ground_truth(shm, event_name: str, log_path: Path | None = None) -> bool:
+    code = EVENT_TO_CODE.get(event_name, 0)
+    if code == 0:
+        return False
+    ok = _send_command(shm, GROUND_TRUTH_COMMAND_TYPE, code)
+    _log_send(log_path, event_name, ok)
+    return ok
 
 
 def _read_ml_stats(shm) -> tuple[float, dict]:
@@ -83,51 +112,143 @@ def _read_ml_stats(shm) -> tuple[float, dict]:
         return 0.0, {}
 
 
-def main() -> None:
+def _attach_shm(memory_name: str):
     from multiprocessing import shared_memory
+    try:
+        return shared_memory.SharedMemory(name=memory_name)
+    except FileNotFoundError:
+        return None
 
-    status_path = Path.home() / "AppData/Roaming/Godot/app_userdata/GetLevelOfAMonkey/brainlink_status.json"
-    cmd_path = status_path.parent / "brainlink_cmd.json"
-    memory_name = "brainlink_data"
-    if len(sys.argv) > 1:
-        status_path = Path(sys.argv[1])
-        cmd_path = status_path.parent / "brainlink_cmd.json"
-    shm = None
-    while True:
-        if cmd_path.exists():
+
+def _load_queue(queue_path: Path) -> list:
+    if not queue_path.exists():
+        return []
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_queue(queue_path: Path, items: list) -> None:
+    try:
+        queue_path.write_text(json.dumps(items), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _process_one_command(cmd: dict, shm, memory_name: str, log_path: Path | None) -> tuple[object, str]:
+    """Returns (shm, memory_name) after optional reconnect."""
+    name = cmd.get("cmd", "")
+    if name == "connect":
+        memory_name = str(cmd.get("memory_name", memory_name))
+        if shm is not None:
             try:
-                cmd = json.loads(cmd_path.read_text(encoding="utf-8"))
-                cmd_path.unlink(missing_ok=True)
-                if cmd.get("cmd") == "connect":
-                    memory_name = cmd.get("memory_name", memory_name)
-                    if cmd.get("status_path"):
-                        status_path = Path(cmd["status_path"])
-                        cmd_path = status_path.parent / "brainlink_cmd.json"
-                    try:
-                        if shm:
-                            shm.close()
-                        shm = shared_memory.SharedMemory(name=memory_name)
-                    except FileNotFoundError:
-                        shm = None
-                elif cmd.get("cmd") == "disconnect" and shm:
-                    shm.close()
-                    shm = None
-                elif cmd.get("cmd") == "send_event" and shm:
-                    code = EVENT_TO_CODE.get(cmd.get("event_code", ""), 0)
-                    if cmd.get("event_code") and code == 0:
-                        code = 0
-                    _send_command(shm, int(cmd.get("command_type", 1)), code)
-                elif cmd.get("cmd") == "minigame_event" and shm:
-                    ev = str(cmd.get("keyboard_event", ""))
-                    if ev in EVENT_TO_CODE:
-                        _send_command(shm, 2, EVENT_TO_CODE[ev])
-                elif cmd.get("cmd") == "config_command" and shm:
-                    ctype = int(cmd.get("command_type", 0))
-                    if 3 <= ctype <= 9:
-                        _send_command(shm, ctype, 0)
+                shm.close()
             except Exception:
                 pass
-        status = {"connected": shm is not None, "event": "", "confidence": 0.0, "probs": {}}
+        return _attach_shm(memory_name), memory_name
+    if shm is None:
+        return shm, memory_name
+    if name == "disconnect":
+        try:
+            shm.close()
+        except Exception:
+            pass
+        return None, memory_name
+    if name == "send_ground_truth":
+        _send_ground_truth(shm, str(cmd.get("event_code", "")), log_path)
+        return shm, memory_name
+    if name == "send_event":
+        ctype = int(cmd.get("command_type", 1))
+        if ctype == GROUND_TRUTH_COMMAND_TYPE:
+            _send_ground_truth(shm, str(cmd.get("event_code", "")), log_path)
+        elif 3 <= ctype <= 9:
+            _send_command(shm, ctype, 0)
+        return shm, memory_name
+    if name == "minigame_event":
+        ev = str(cmd.get("keyboard_event", ""))
+        if ev in EVENT_TO_CODE:
+            _send_ground_truth(shm, ev, log_path)
+        return shm, memory_name
+    if name == "config_command":
+        ctype = int(cmd.get("command_type", 0))
+        if 3 <= ctype <= 9:
+            _send_command(shm, ctype, 0)
+        return shm, memory_name
+    return shm, memory_name
+
+
+def _drain_command_queue(
+    queue_path: Path,
+    cmd_path: Path,
+    shm,
+    memory_name: str,
+    log_path: Path | None,
+    max_ground_truth_per_tick: int = 1,
+) -> tuple[object, str]:
+    queue = _load_queue(queue_path)
+    legacy = None
+    if cmd_path.exists():
+        try:
+            legacy = json.loads(cmd_path.read_text(encoding="utf-8"))
+            cmd_path.unlink(missing_ok=True)
+        except Exception:
+            cmd_path.unlink(missing_ok=True)
+    if legacy is not None:
+        queue.insert(0, legacy)
+    if not queue:
+        return shm, memory_name
+
+    gt_sent = 0
+    remaining: list = []
+    for cmd in queue:
+        if not isinstance(cmd, dict):
+            continue
+        is_gt = cmd.get("cmd") in ("send_ground_truth", "minigame_event") or (
+            cmd.get("cmd") == "send_event" and int(cmd.get("command_type", 0)) == GROUND_TRUTH_COMMAND_TYPE
+        )
+        if is_gt and gt_sent >= max_ground_truth_per_tick:
+            remaining.append(cmd)
+            continue
+        if is_gt and shm is None:
+            remaining.append(cmd)
+            continue
+        before_shm = shm
+        shm, memory_name = _process_one_command(cmd, shm, memory_name, log_path)
+        if is_gt:
+            if before_shm is None and shm is None:
+                remaining.append(cmd)
+            else:
+                gt_sent += 1
+        elif cmd.get("cmd") == "connect" and shm is None:
+            remaining.append(cmd)
+
+    _save_queue(queue_path, remaining)
+    return shm, memory_name
+
+
+def main() -> None:
+    default_status = Path.home() / "AppData/Roaming/Godot/app_userdata/GetLevelOfAMonkey/brainlink_status.json"
+    status_path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_status
+    memory_name = sys.argv[2] if len(sys.argv) > 2 else "brainlink_data"
+    queue_path = status_path.parent / "brainlink_cmd_queue.json"
+    cmd_path = status_path.parent / "brainlink_cmd.json"
+    log_path = status_path.parent / "brainlink_shim.log"
+
+    shm = _attach_shm(memory_name)
+    while True:
+        shm, memory_name = _drain_command_queue(queue_path, cmd_path, shm, memory_name, log_path)
+        if shm is None:
+            shm = _attach_shm(memory_name)
+
+        status = {
+            "connected": shm is not None,
+            "event": "",
+            "confidence": 0.0,
+            "probs": {},
+            "heartbeat_ms": int(time.time() * 1000),
+        }
         if shm:
             try:
                 ev = read_int32(shm, EVENT_CODE_OFF)
@@ -137,6 +258,10 @@ def main() -> None:
                 status["probs"] = probs
             except Exception:
                 status["connected"] = False
+                try:
+                    shm.close()
+                except Exception:
+                    pass
                 shm = None
         try:
             status_path.write_text(json.dumps(status), encoding="utf-8")

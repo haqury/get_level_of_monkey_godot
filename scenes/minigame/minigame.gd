@@ -6,6 +6,7 @@ var _sim: MinigameSim
 var _monkey_sprites: Array = []
 var _poop_sprites: Array = []
 var _client_hp_mirror: int = 3
+var _game_over_handled: bool = false
 
 
 func _ready() -> void:
@@ -22,11 +23,18 @@ func enter(extra: Dictionary = {}) -> void:
 	GameState.monkey_mode = mode
 	_sim.configure(mode, ConfigLoader.balance.get("minigame", {}))
 	_clear_visuals()
+	_game_over_handled = false
+	GameUI.close_minigame_game_over()
 	var session := get_tree().current_scene
 	if session and session.has_method("get_player"):
 		var pl = session.get_player()
 		if pl:
 			pl.heal_full()
+			_client_hp_mirror = pl.max_hp
+		if GameState.is_online() and session.has_node("RemotePlayer"):
+			var rp = session.get_node("RemotePlayer")
+			if rp.has_method("set_defeated"):
+				rp.set_defeated(false)
 	GameUI.set_survival_timer(0, true)
 	GameUI.show_top10(mode)
 
@@ -35,25 +43,28 @@ func update_world(delta: float) -> void:
 	var session := get_tree().current_scene
 	if session == null or not session.has_method("get_player"):
 		return
+	if GameUI.minigame_game_over_open:
+		return
 	var player: Node = session.get_player()
-	var pos: Vector2 = player.get_position_units()
 	if GameState.is_client():
 		return
+	if _sim.is_game_over:
+		return
+	var aim_pos: Vector2 = _monkey_aim_position(session, player)
+	var extras: Array = _extra_hit_positions(session, player)
 	_sim.update_sim(
 		delta,
-		pos,
-		func(): player.apply_damage(1),
+		aim_pos,
+		func(poop_pos: Vector2): _apply_poop_hit(session, player, poop_pos),
 		func(): ProgressionSystem.add_xp(int(ConfigLoader.balance.get("progression", {}).get("xp_per_dodge", 5))),
+		extras,
 	)
 	ProgressionSystem.add_xp(int(float(ConfigLoader.balance.get("progression", {}).get("xp_per_second_survived", 10)) * delta))
 	GameUI.set_survival_timer(_sim.game_time, true)
 	GameUI.refresh_hud()
 	_sync_visuals()
-	if player.hp <= 0 and not _sim.is_game_over:
-		_sim.is_game_over = true
-		if session.has_method("on_minigame_game_over"):
-			session.on_minigame_game_over(_sim.game_time, GameState.monkey_mode)
-		BrainLinkBridge.send_minigame_event("player_died")
+	if _all_players_defeated(session, player):
+		_trigger_full_game_over(session)
 
 
 func get_bounds() -> Dictionary:
@@ -65,6 +76,7 @@ func get_view_bounds() -> Dictionary:
 
 
 func apply_network_snapshot(msg: Dictionary) -> void:
+	var was_over := _sim.is_game_over
 	_sim.game_time = float(msg.get("game_time", 0))
 	_sim.is_game_over = bool(msg.get("game_over", false))
 	var hp_map: Dictionary = msg.get("hp", {})
@@ -74,7 +86,12 @@ func apply_network_snapshot(msg: Dictionary) -> void:
 		var key := str(GameState.local_player_id)
 		if hp_map.has(key):
 			pl.hp = int(hp_map[key])
+			pl.set_defeated(pl.hp <= 0)
 	_client_hp_mirror = int(hp_map.get("1", _client_hp_mirror))
+	if session and GameState.is_client() and session.has_node("RemotePlayer"):
+		var rp = session.get_node("RemotePlayer")
+		if rp.has_method("set_defeated") and hp_map.has("0"):
+			rp.set_defeated(int(hp_map["0"]) <= 0)
 	_clear_visuals()
 	for m in msg.get("monkeys", []):
 		if typeof(m) != TYPE_DICTIONARY:
@@ -85,6 +102,9 @@ func apply_network_snapshot(msg: Dictionary) -> void:
 			continue
 		_add_poop_sprite(Vector2(float(p.get("x", 0)), float(p.get("z", 0))))
 	GameUI.set_survival_timer(_sim.game_time, true)
+	GameUI.refresh_hud()
+	if _sim.is_game_over and not was_over and not _game_over_handled:
+		_trigger_full_game_over(session)
 
 
 func build_network_snapshot() -> Dictionary:
@@ -96,35 +116,94 @@ func build_network_snapshot() -> Dictionary:
 	return _sim.build_snapshot(host_hp, client_hp)
 
 
+func _monkey_aim_position(session: Node, player: Node) -> Vector2:
+	if not player.is_defeated:
+		return player.get_position_units()
+	if GameState.is_online() and session.has_node("RemotePlayer") and _client_hp_mirror > 0:
+		var rp = session.get_node("RemotePlayer")
+		if not rp.is_defeated:
+			return rp.get_position_units()
+	return player.get_position_units()
+
+
+func _extra_hit_positions(session: Node, player: Node) -> Array:
+	var out: Array = []
+	if GameState.is_online() and session.has_node("RemotePlayer") and _client_hp_mirror > 0:
+		var rp = session.get_node("RemotePlayer")
+		if not rp.is_defeated:
+			out.append(rp.get_position_units())
+	if not player.is_defeated:
+		return out
+	return out
+
+
+func _apply_poop_hit(session: Node, player: Node, poop_pos: Vector2) -> void:
+	var host_pos: Vector2 = player.get_position_units()
+	var hit_host: bool = (not bool(player.is_defeated)) and poop_pos.distance_to(host_pos) < 0.5
+	if hit_host:
+		var was_alive: bool = int(player.hp) > 0
+		player.apply_damage(1)
+		if was_alive and player.hp <= 0:
+			BrainLinkBridge.send_minigame_event("player_died")
+		return
+	if not GameState.is_online() or _client_hp_mirror <= 0:
+		return
+	var rp = session.get_node("RemotePlayer")
+	if rp.is_defeated:
+		return
+	if poop_pos.distance_to(rp.get_position_units()) >= 0.5:
+		return
+	_client_hp_mirror = maxi(0, _client_hp_mirror - 1)
+	if rp.has_method("set_defeated") and _client_hp_mirror <= 0:
+		rp.set_defeated(true)
+		BrainLinkBridge.send_minigame_event("player_died")
+	GameUI.refresh_hud()
+
+
+func _all_players_defeated(session: Node, player: Node) -> bool:
+	if not GameState.is_online():
+		return player.hp <= 0 or player.is_defeated
+	return (player.hp <= 0 or player.is_defeated) and _client_hp_mirror <= 0
+
+
+func _trigger_full_game_over(session: Node) -> void:
+	if _game_over_handled:
+		return
+	_game_over_handled = true
+	_sim.is_game_over = true
+	if not GameState.is_client() and session.has_method("on_minigame_game_over"):
+		session.on_minigame_game_over(_sim.game_time, GameState.monkey_mode)
+	GameUI.show_minigame_game_over()
+
+
 func _build_background() -> void:
 	var forest_path := "res://assets/sprites/minigame/forest_floor.png"
-	var forest: Sprite2D
-	if ResourceLoader.exists(forest_path):
-		forest = WorldVisuals.floor_sprite(forest_path, Vector2(70, 36))
-	else:
-		forest = WorldVisuals.solid_sprite(Vector2(70, 36), Color(0.2, 0.35, 0.15))
+	var forest := _make_tiled_floor(forest_path, Vector2(70, 36), Color(0.2, 0.35, 0.15))
 	forest.name = "Forest"
 	$Background.add_child(forest)
 	var clearing_path := "res://assets/sprites/minigame/clearing.png"
-	var clearing: Sprite2D
-	if ResourceLoader.exists(clearing_path):
-		clearing = WorldVisuals.floor_sprite(clearing_path, Vector2(60, 30))
-	else:
-		clearing = WorldVisuals.solid_sprite(Vector2(60, 30), Color(0.45, 0.55, 0.25))
+	var clearing := _make_tiled_floor(clearing_path, Vector2(60, 30), Color(0.45, 0.55, 0.25))
 	clearing.name = "Clearing"
 	$Background.add_child(clearing)
-	var road_n := WorldVisuals.solid_sprite(Vector2(60, 2.5), Color(0.45, 0.4, 0.32))
+	var road_path := "res://assets/sprites/minigame/road.png"
+	var road_n := _make_tiled_floor(road_path, Vector2(60, 2.5), Color(0.45, 0.4, 0.32))
 	road_n.position = GameState.units_to_px(Vector2(0, 15 - 1.25))
 	$Background.add_child(road_n)
-	var road_s := WorldVisuals.solid_sprite(Vector2(60, 2.5), Color(0.45, 0.4, 0.32))
+	var road_s := _make_tiled_floor(road_path, Vector2(60, 2.5), Color(0.45, 0.4, 0.32))
 	road_s.position = GameState.units_to_px(Vector2(0, -15 + 1.25))
 	$Background.add_child(road_s)
-	var road_e := WorldVisuals.solid_sprite(Vector2(2.5, 30), Color(0.45, 0.4, 0.32))
+	var road_e := _make_tiled_floor(road_path, Vector2(2.5, 30), Color(0.45, 0.4, 0.32))
 	road_e.position = GameState.units_to_px(Vector2(30 - 1.25, 0))
 	$Background.add_child(road_e)
-	var road_w := WorldVisuals.solid_sprite(Vector2(2.5, 30), Color(0.45, 0.4, 0.32))
+	var road_w := _make_tiled_floor(road_path, Vector2(2.5, 30), Color(0.45, 0.4, 0.32))
 	road_w.position = GameState.units_to_px(Vector2(-30 + 1.25, 0))
 	$Background.add_child(road_w)
+
+
+func _make_tiled_floor(path: String, size_units: Vector2, fallback: Color) -> Sprite2D:
+	if ResourceLoader.exists(path):
+		return WorldVisuals.tiled_sprite(path, size_units)
+	return WorldVisuals.solid_sprite(size_units, fallback)
 
 
 func _sync_visuals() -> void:

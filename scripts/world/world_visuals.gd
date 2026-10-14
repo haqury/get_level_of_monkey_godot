@@ -20,6 +20,14 @@ static func load_texture(path: String) -> Texture2D:
 	return load("res://icon.svg") as Texture2D
 
 
+static func tiled_sprite(path: String, size_units: Vector2) -> SceneSprite:
+	var spr := SceneSprite.new()
+	spr.texture = load_texture(path)
+	spr.size_units = size_units
+	spr.tiled = true
+	return spr
+
+
 static func floor_sprite(path: String, size_units: Vector2) -> Sprite2D:
 	var tex := load_texture(path)
 	var spr := Sprite2D.new()

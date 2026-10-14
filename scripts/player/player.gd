@@ -14,6 +14,7 @@ var energy: float = 100.0
 var energy_regen: float = 5.0
 var move_cost: float = 100.0
 var cheater_mode: bool = false
+var is_defeated: bool = false
 
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var collision: CollisionShape2D = $CollisionShape2D
@@ -48,7 +49,11 @@ func apply_viewport_scale() -> void:
 func _physics_process(delta: float) -> void:
 	if not is_local:
 		return
-	if GameUI.pause_open:
+	if GameUI.pause_open or GameUI.minigame_game_over_open:
+		return
+	if is_defeated:
+		velocity = Vector2.ZERO
+		_update_sprite()
 		return
 	var dir := InputManager.get_movement_vector()
 	is_sitting = InputManager.is_sitting()
@@ -58,7 +63,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		_regen_energy(delta)
 		if dir.length_squared() > 0.01:
-			if not _try_spend_move_energy(delta):
+			if not _try_spend_move_energy(delta, not InputManager.is_using_brainlink()):
 				dir = Vector2.ZERO
 			velocity = dir * move_speed * GameState.PIXELS_PER_UNIT
 			facing = _dir_to_facing(dir)
@@ -84,7 +89,14 @@ func get_position_units() -> Vector2:
 
 func get_network_state() -> Dictionary:
 	var p: Vector2 = get_position_units()
-	return {"x": p.x, "y": p.y, "facing": facing, "is_sitting": is_sitting}
+	return {
+		"x": p.x,
+		"y": p.y,
+		"facing": facing,
+		"is_sitting": is_sitting,
+		"defeated": is_defeated,
+		"hp": hp,
+	}
 
 
 func set_max_hp(v: int) -> void:
@@ -106,15 +118,25 @@ func set_move_speed(v: float) -> void:
 
 
 func apply_damage(amount: int) -> void:
+	if is_defeated:
+		return
 	hp = maxi(0, hp - amount)
 	GameUI.refresh_hud()
 	if hp <= 0:
-		if _scene_ref and _scene_ref.has_method("on_player_died"):
-			_scene_ref.on_player_died()
+		set_defeated(true)
+
+
+func set_defeated(on: bool) -> void:
+	is_defeated = on
+	if is_defeated:
+		is_sitting = false
+		velocity = Vector2.ZERO
+	_update_sprite()
 
 
 func heal_full() -> void:
 	hp = max_hp
+	set_defeated(false)
 
 
 func _regen_energy(delta: float) -> void:
@@ -125,8 +147,8 @@ func _regen_energy(delta: float) -> void:
 	GameUI.refresh_hud()
 
 
-func _try_spend_move_energy(delta: float) -> bool:
-	if cheater_mode:
+func _try_spend_move_energy(delta: float, charge_energy: bool = true) -> bool:
+	if not charge_energy or cheater_mode or GameState.cheater_mode:
 		return true
 	var cost := move_cost * delta / 10.0
 	if energy < cost:
@@ -161,9 +183,17 @@ func _update_sprite() -> void:
 	var key := facing if velocity.length_squared() > 1.0 and _textures.has(facing) else "idle"
 	if _textures.has(key):
 		sprite.texture = _textures[key]
-	if is_sitting:
+	if is_defeated:
+		sprite.modulate = Color(0.65, 0.65, 0.7, 1.0)
+		sprite.rotation = deg_to_rad(90.0)
+		sprite.scale = Vector2(0.85, 0.85)
+	elif is_sitting:
+		sprite.modulate = Color.WHITE
+		sprite.rotation = 0.0
 		sprite.scale = Vector2(1.0, 0.7)
 	else:
+		sprite.modulate = Color.WHITE
+		sprite.rotation = 0.0
 		sprite.scale = Vector2.ONE
 
 
