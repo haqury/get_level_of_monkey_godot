@@ -1,3 +1,4 @@
+@tool
 extends Control
 
 signal closed
@@ -8,6 +9,7 @@ var _rebind_button: Button = null
 var _block_cheater_signal: bool = false
 var _block_display_signals: bool = false
 var _block_bl_signals: bool = false
+var _block_control_device_signals: bool = false
 
 @onready var _title: Label = $Panel/Margin/VBox/Header/Title
 @onready var _close_btn: Button = $Panel/Margin/VBox/Header/CloseBtn
@@ -21,6 +23,8 @@ var _block_bl_signals: bool = false
 @onready var _resolution: OptionButton = $Panel/Margin/VBox/Tabs/Display/ResRow/Resolution
 @onready var _fullscreen: CheckBox = $Panel/Margin/VBox/Tabs/Display/FullRow/FullscreenCheck
 @onready var _apply_display: Button = $Panel/Margin/VBox/Tabs/Display/ApplyDisplay
+@onready var _keyboard_enabled: CheckBox = $Panel/Margin/VBox/Tabs/Controls/KeyboardEnabled
+@onready var _gamepad_enabled: CheckBox = $Panel/Margin/VBox/Tabs/Controls/GamepadEnabled
 @onready var _controls_grid: GridContainer = $Panel/Margin/VBox/Tabs/Controls/Scroll/Grid
 @onready var _rebind_hint: Label = $Panel/Margin/VBox/Tabs/Controls/RebindHint
 @onready var _bl_keyboard: CheckBox = $Panel/Margin/VBox/Tabs/BrainLink/BlKeyboard
@@ -31,9 +35,15 @@ var _block_bl_signals: bool = false
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		call_deferred("ensure_editor_preview_content")
+		return
 	visible = false
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	GameUiTheme.apply_to_node(self)
+	GameUiTheme.apply_modal_overlay($Backdrop)
 	_close_btn.pressed.connect(_on_close_pressed)
 	_lang_en.pressed.connect(func(): I18n.set_locale("en"))
 	_lang_ru.pressed.connect(func(): I18n.set_locale("ru"))
@@ -46,10 +56,43 @@ func _ready() -> void:
 	_bl_ml.toggled.connect(func(v): _on_bl_toggle("send_to_ml", v))
 	_bl_events.toggled.connect(func(v): _on_bl_toggle("send_brainlink_events", v))
 	_bl_advanced.pressed.connect(_on_bl_advanced)
+	_keyboard_enabled.toggled.connect(_on_keyboard_enabled_toggled)
+	_gamepad_enabled.toggled.connect(_on_gamepad_enabled_toggled)
 	if not I18n.locale_changed.is_connected(_refresh_locale):
 		I18n.locale_changed.connect(_refresh_locale)
 	_build_control_rows()
 	_init_resolution_options()
+	call_deferred("_apply_tabs_theme")
+
+
+func ensure_editor_preview_content() -> void:
+	if not Engine.is_editor_hint():
+		return
+	if GameUiTheme.is_edited_scene_root(self):
+		visible = true
+		_build_editor_dynamic_content()
+	GameUiTheme.apply_editor_preview(self)
+	call_deferred("_apply_tabs_theme")
+
+
+func prepare_editor_preview_visible() -> void:
+	if not Engine.is_editor_hint():
+		return
+	visible = true
+	_build_editor_dynamic_content()
+	GameUiTheme.apply_editor_preview(self)
+	call_deferred("_apply_tabs_theme")
+
+
+func _build_editor_dynamic_content() -> void:
+	if _resolution.item_count == 0:
+		_init_resolution_options()
+	if _controls_grid.get_child_count() == 0:
+		_build_control_rows()
+
+
+func _apply_tabs_theme() -> void:
+	GameUiTheme.apply_tab_container_styles(_tabs)
 
 
 func open(from_pause: bool) -> void:
@@ -57,6 +100,8 @@ func open(from_pause: bool) -> void:
 	_rebind_config_key = ""
 	visible = true
 	move_to_front()
+	GameUiTheme.style_interactive_tree(self)
+	GameUiTheme.apply_tab_container_styles(_tabs)
 	_refresh_all()
 
 
@@ -95,6 +140,8 @@ func _refresh_all() -> void:
 	_fullscreen.text = I18n.tr_key("settings.fullscreen", "Fullscreen")
 	_apply_display.text = I18n.tr_key("settings.apply_display", "Apply display")
 	_rebind_hint.text = I18n.tr_key("settings.rebind_clear_hint", "Backspace to clear")
+	_keyboard_enabled.text = I18n.tr_key("settings.keyboard_enabled", "Keyboard")
+	_gamepad_enabled.text = I18n.tr_key("settings.gamepad_enabled", "Gamepad / controller")
 	_bl_keyboard.text = I18n.tr_key("settings.bl_send_keyboard", "Send keyboard")
 	_bl_history.text = I18n.tr_key("settings.bl_send_history", "Send to history")
 	_bl_ml.text = I18n.tr_key("settings.bl_send_ml", "Send to ML")
@@ -104,6 +151,7 @@ func _refresh_all() -> void:
 	_refresh_display_tab()
 	_refresh_cheater()
 	_refresh_controls_tab()
+	_refresh_control_devices()
 	_refresh_brainlink_tab()
 
 
@@ -151,6 +199,8 @@ func _init_resolution_options() -> void:
 
 
 func _build_control_rows() -> void:
+	if _controls_grid.get_child_count() > 0:
+		return
 	for row in GameControls.CONTROL_ROWS:
 		var cfg_key: String = row["config"]
 		var label := Label.new()
@@ -158,11 +208,34 @@ func _build_control_rows() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var btn := Button.new()
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.custom_minimum_size.x = 120.0
+		btn.custom_minimum_size = Vector2(120, 44)
+		GameUiTheme.menu_button_settings(btn)
 		btn.pressed.connect(_on_rebind_pressed.bind(cfg_key, btn))
 		btn.set_meta("config_key", cfg_key)
 		_controls_grid.add_child(label)
 		_controls_grid.add_child(btn)
+
+
+func _refresh_control_devices() -> void:
+	var controls: Dictionary = ConfigLoader.game_config.get("controls", {})
+	_block_control_device_signals = true
+	_keyboard_enabled.button_pressed = bool(controls.get("keyboard_enabled", true))
+	_gamepad_enabled.button_pressed = bool(controls.get("gamepad_enabled", false))
+	_block_control_device_signals = false
+
+
+func _on_keyboard_enabled_toggled(on: bool) -> void:
+	if _block_control_device_signals:
+		return
+	GameControls.set_keyboard_enabled(on)
+	_refresh_control_devices()
+
+
+func _on_gamepad_enabled_toggled(on: bool) -> void:
+	if _block_control_device_signals:
+		return
+	GameControls.set_gamepad_enabled(on)
+	_refresh_control_devices()
 
 
 func _refresh_controls_tab() -> void:

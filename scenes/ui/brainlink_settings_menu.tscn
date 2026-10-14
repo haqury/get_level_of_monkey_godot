@@ -27,10 +27,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -400.0
-offset_top = -300.0
-offset_right = 400.0
-offset_bottom = 300.0
+offset_left = -520.0
+offset_top = -360.0
+offset_right = 520.0
+offset_bottom = 360.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -68,7 +68,7 @@ modulate = Color(0.7, 0.9, 1, 1)
 [node name="Tabs" type="TabContainer" parent="Panel/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
-custom_minimum_size = Vector2(0, 440)
+custom_minimum_size = Vector2(0, 520)
 
 [node name="Connection" type="VBoxContainer" parent="Panel/Margin/VBox/Tabs"]
 layout_mode = 2
@@ -198,6 +198,39 @@ visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="FaultModeRow" type="HBoxContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
+layout_mode = 2
+
+[node name="FaultModeLabel" type="Label" parent="Panel/Margin/VBox/Tabs/Faults/FaultModeRow"]
+layout_mode = 2
+text = "Fault set"
+
+[node name="FaultModeBase" type="Button" parent="Panel/Margin/VBox/Tabs/Faults/FaultModeRow"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "Base fault"
+
+[node name="FaultModeMl" type="Button" parent="Panel/Margin/VBox/Tabs/Faults/FaultModeRow"]
+layout_mode = 2
+toggle_mode = true
+text = "Multi-Level"
+
+[node name="BaseTitle" type="Label" parent="Panel/Margin/VBox/Tabs/Faults"]
+layout_mode = 2
+text = "Base fault"
+
+[node name="BaseGrid" type="GridContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 4
+columns = 4
+
+[node name="MultiTitle" type="Label" parent="Panel/Margin/VBox/Tabs/Faults"]
+layout_mode = 2
+text = "Multi fault"
+
 [node name="MultiCountRow" type="HBoxContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
 layout_mode = 2
 
@@ -210,31 +243,12 @@ layout_mode = 2
 min_value = 1.0
 max_value = 64.0
 
-[node name="BaseTitle" type="Label" parent="Panel/Margin/VBox/Tabs/Faults"]
-layout_mode = 2
-text = "Base fault"
-
-[node name="BaseScroll" type="ScrollContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 120)
-
-[node name="BaseGrid" type="GridContainer" parent="Panel/Margin/VBox/Tabs/Faults/BaseScroll"]
+[node name="MultiGrid" type="GridContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
 layout_mode = 2
 size_flags_horizontal = 3
-columns = 2
-
-[node name="MultiTitle" type="Label" parent="Panel/Margin/VBox/Tabs/Faults"]
-layout_mode = 2
-text = "Multi fault"
-
-[node name="MultiScroll" type="ScrollContainer" parent="Panel/Margin/VBox/Tabs/Faults"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 120)
-
-[node name="MultiGrid" type="GridContainer" parent="Panel/Margin/VBox/Tabs/Faults/MultiScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
-columns = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 4
+columns = 4
 
 [node name="ApplyFaults" type="Button" parent="Panel/Margin/VBox/Tabs/Faults"]
 layout_mode = 2

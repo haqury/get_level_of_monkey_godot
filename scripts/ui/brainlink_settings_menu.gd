@@ -1,3 +1,4 @@
+@tool
 extends Control
 
 signal closed
@@ -18,6 +19,7 @@ const FAULT_KEYS := [
 
 var _from_pause: bool = false
 var _block_signals: bool = false
+var _fault_view: String = "base_fault"
 var _base_fault_spins: Dictionary = {}
 var _multi_fault_spins: Dictionary = {}
 
@@ -34,24 +36,39 @@ var _multi_fault_spins: Dictionary = {}
 @onready var _bl_ml: CheckBox = $Panel/Margin/VBox/Tabs/Options/BlMl
 @onready var _bl_events: CheckBox = $Panel/Margin/VBox/Tabs/Options/BlEvents
 @onready var _pred_mode: OptionButton = $Panel/Margin/VBox/Tabs/Options/PredModeRow/PredMode
+@onready var _conf_threshold_label: Label = $Panel/Margin/VBox/Tabs/Options/ConfThresholdLabel
 @onready var _conf_threshold: SpinBox = $Panel/Margin/VBox/Tabs/Options/ConfThreshold
+@onready var _min_conf_label: Label = $Panel/Margin/VBox/Tabs/Options/MinConfLabel
 @onready var _min_conf: SpinBox = $Panel/Margin/VBox/Tabs/Options/MinConf
+@onready var _full_conf_label: Label = $Panel/Margin/VBox/Tabs/Options/FullConfLabel
 @onready var _full_conf: SpinBox = $Panel/Margin/VBox/Tabs/Options/FullConf
+@onready var _weights_row: HBoxContainer = $Panel/Margin/VBox/Tabs/Options/WeightsRow
 @onready var _weights_edit: LineEdit = $Panel/Margin/VBox/Tabs/Options/WeightsRow/WeightsEdit
 @onready var _model_path: LineEdit = $Panel/Margin/VBox/Tabs/Paths/ModelPath
 @onready var _history_path: LineEdit = $Panel/Margin/VBox/Tabs/Paths/HistoryPath
 @onready var _btn_save_paths: Button = $Panel/Margin/VBox/Tabs/Paths/SavePaths
+@onready var _fault_mode_base: Button = $Panel/Margin/VBox/Tabs/Faults/FaultModeRow/FaultModeBase
+@onready var _fault_mode_ml: Button = $Panel/Margin/VBox/Tabs/Faults/FaultModeRow/FaultModeMl
+@onready var _multi_count_row: HBoxContainer = $Panel/Margin/VBox/Tabs/Faults/MultiCountRow
 @onready var _multi_count: SpinBox = $Panel/Margin/VBox/Tabs/Faults/MultiCountRow/MultiCount
-@onready var _base_fault_grid: GridContainer = $Panel/Margin/VBox/Tabs/Faults/BaseScroll/BaseGrid
-@onready var _multi_fault_grid: GridContainer = $Panel/Margin/VBox/Tabs/Faults/MultiScroll/MultiGrid
+@onready var _base_title: Label = $Panel/Margin/VBox/Tabs/Faults/BaseTitle
+@onready var _base_fault_grid: GridContainer = $Panel/Margin/VBox/Tabs/Faults/BaseGrid
+@onready var _multi_title: Label = $Panel/Margin/VBox/Tabs/Faults/MultiTitle
+@onready var _multi_fault_grid: GridContainer = $Panel/Margin/VBox/Tabs/Faults/MultiGrid
 @onready var _btn_apply_faults: Button = $Panel/Margin/VBox/Tabs/Faults/ApplyFaults
 @onready var _btn_apply_base_fault_cmd: Button = $Panel/Margin/VBox/Tabs/Commands/ApplyBaseFault
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		call_deferred("ensure_editor_preview_content")
+		return
 	visible = false
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	GameUiTheme.apply_to_node(self)
+	GameUiTheme.apply_modal_overlay($Backdrop)
 	_close_btn.pressed.connect(close_menu)
 	_btn_connect.pressed.connect(_on_connect)
 	_btn_launch.pressed.connect(_on_launch)
@@ -61,6 +78,7 @@ func _ready() -> void:
 	_bl_ml.toggled.connect(func(v): _on_bl_toggle("send_to_ml", v))
 	_bl_events.toggled.connect(func(v): _on_bl_toggle("send_brainlink_events", v))
 	_pred_mode.item_selected.connect(_on_pred_mode_selected)
+	_setup_fault_view_toggle()
 	_conf_threshold.value_changed.connect(func(v): _on_float_setting("confidence_threshold", v))
 	_min_conf.value_changed.connect(func(v): _on_float_setting("min_confidence", v))
 	_full_conf.value_changed.connect(func(v): _on_float_setting("full_confidence", v))
@@ -75,7 +93,7 @@ func _ready() -> void:
 	$Panel/Margin/VBox/Tabs/Commands/ResetModel.pressed.connect(func(): _send_command(7))
 	$Panel/Margin/VBox/Tabs/Commands/LoadHistory.pressed.connect(func(): _send_command(8))
 	$Panel/Margin/VBox/Tabs/Commands/ExportSettings.pressed.connect(func(): _send_command(9))
-	$Panel/Margin/VBox/Tabs/Commands/TogglePredMode.pressed.connect(func(): _send_command(4))
+	$Panel/Margin/VBox/Tabs/Commands/TogglePredMode.pressed.connect(_on_toggle_pred_mode_command)
 	if not BrainLinkBridge.connection_changed.is_connected(_refresh_status):
 		BrainLinkBridge.connection_changed.connect(_refresh_status)
 	if not I18n.locale_changed.is_connected(_refresh_locale):
@@ -83,12 +101,64 @@ func _ready() -> void:
 	_build_fault_grids()
 	_init_pred_mode_options()
 	_setup_spin_ranges()
+	call_deferred("_apply_tabs_theme")
+
+
+func ensure_editor_preview_content() -> void:
+	if not Engine.is_editor_hint():
+		return
+	if GameUiTheme.is_edited_scene_root(self):
+		visible = true
+		_build_editor_dynamic_content()
+	GameUiTheme.apply_editor_preview(self)
+	call_deferred("_apply_tabs_theme")
+
+
+func prepare_editor_preview_visible() -> void:
+	if not Engine.is_editor_hint():
+		return
+	visible = true
+	_build_editor_dynamic_content()
+	GameUiTheme.apply_editor_preview(self)
+	call_deferred("_apply_tabs_theme")
+
+
+func _build_editor_dynamic_content() -> void:
+	if _base_fault_grid.get_child_count() == 0:
+		_build_fault_grids()
+		_init_pred_mode_options()
+		_setup_spin_ranges()
+	_setup_fault_view_toggle()
+	var mode := str(ConfigLoader.game_config.get("brainlink", {}).get("prediction_mode", "base"))
+	_apply_prediction_mode(mode, false, false)
+	_set_fault_view("base_fault")
+
+
+func _setup_fault_view_toggle() -> void:
+	if _fault_mode_base.button_group != null:
+		return
+	var fault_view_group := ButtonGroup.new()
+	_fault_mode_base.button_group = fault_view_group
+	_fault_mode_ml.button_group = fault_view_group
+	if not _fault_mode_base.toggled.is_connected(_on_fault_view_base_toggled):
+		_fault_mode_base.toggled.connect(_on_fault_view_base_toggled)
+	if not _fault_mode_ml.toggled.is_connected(_on_fault_view_multi_toggled):
+		_fault_mode_ml.toggled.connect(_on_fault_view_multi_toggled)
+	GameUiTheme.menu_button_settings(_fault_mode_base)
+	GameUiTheme.menu_button_settings(_fault_mode_ml)
+
+
+func _apply_tabs_theme() -> void:
+	GameUiTheme.apply_tab_container_styles(_tabs)
 
 
 func open(from_pause: bool) -> void:
 	_from_pause = from_pause
+	_fault_view = "base_fault"
 	visible = true
 	move_to_front()
+	GameUiTheme.style_interactive_tree(self)
+	GameUiTheme.apply_tab_container_styles(_tabs)
 	_feedback.text = ""
 	_refresh_all()
 
@@ -116,6 +186,8 @@ func _init_pred_mode_options() -> void:
 
 
 func _build_fault_grids() -> void:
+	_base_fault_grid.columns = 4
+	_multi_fault_grid.columns = 4
 	for key in FAULT_KEYS:
 		_add_fault_row(_base_fault_grid, key, _base_fault_spins)
 		_add_fault_row(_multi_fault_grid, key, _multi_fault_spins)
@@ -124,10 +196,14 @@ func _build_fault_grids() -> void:
 func _add_fault_row(grid: GridContainer, key: String, store: Dictionary) -> void:
 	var label := Label.new()
 	label.text = I18n.tr_key("settings.bl_fault_%s" % key, key)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", 15)
 	var spin := SpinBox.new()
 	spin.min_value = -999
 	spin.max_value = 999
 	spin.step = 1
+	spin.custom_minimum_size = Vector2(76, 32)
+	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spin.value_changed.connect(func(_v): _on_fault_dict_changed())
 	store[key] = spin
 	grid.add_child(label)
@@ -147,7 +223,7 @@ func _refresh_all() -> void:
 	_tabs.set_tab_title(1, I18n.tr_key("settings.tab_brainlink", "General"))
 	_tabs.set_tab_title(2, I18n.tr_key("settings.tab_client_commands", "Client commands"))
 	_tabs.set_tab_title(3, I18n.tr_key("settings.tab_paths", "Paths"))
-	_tabs.set_tab_title(4, I18n.tr_key("settings.bl_base_fault_title", "Faults"))
+	_tabs.set_tab_title(4, I18n.tr_key("settings.tab_faults", "Faults"))
 	_btn_connect.text = I18n.tr_key("brainlink_status.looking_for_client", "Connect")
 	_btn_launch.text = I18n.tr_key("brainlink_status.starting_client", "Launch client")
 	_btn_disconnect.text = I18n.tr_key("settings.bl_disconnect", "Disconnect SHM")
@@ -159,8 +235,14 @@ func _refresh_all() -> void:
 	$Panel/Margin/VBox/Tabs/Options/ConfThresholdLabel.text = I18n.tr_key("settings.bl_conf_threshold", "Threshold")
 	$Panel/Margin/VBox/Tabs/Options/MinConfLabel.text = I18n.tr_key("settings.bl_min_confidence", "Min conf")
 	$Panel/Margin/VBox/Tabs/Options/FullConfLabel.text = I18n.tr_key("settings.bl_full_confidence", "Full conf")
-	$Panel/Margin/VBox/Tabs/Faults/BaseTitle.text = I18n.tr_key("settings.bl_base_fault_title", "Base fault")
-	$Panel/Margin/VBox/Tabs/Faults/MultiTitle.text = I18n.tr_key("settings.bl_multi_fault_title", "Multi fault")
+	$Panel/Margin/VBox/Tabs/Faults/FaultModeRow/FaultModeLabel.text = I18n.tr_key(
+		"settings.bl_fault_section",
+		"Fault set",
+	)
+	_fault_mode_base.text = I18n.tr_key("settings.bl_fault_view_base", "Base fault")
+	_fault_mode_ml.text = I18n.tr_key("settings.bl_fault_view_multi", "Multi-Level")
+	_base_title.text = I18n.tr_key("settings.bl_base_fault_title", "Base fault")
+	_multi_title.text = I18n.tr_key("settings.bl_multi_fault_title", "Multi fault")
 	$Panel/Margin/VBox/Tabs/Options/WeightsRow/WeightsLabel.text = I18n.tr_key("settings.bl_weights", "Weights")
 	$Panel/Margin/VBox/Tabs/Paths/ModelLabel.text = I18n.tr_key("settings.bl_model_path", "Model")
 	$Panel/Margin/VBox/Tabs/Paths/HistoryLabel.text = I18n.tr_key("settings.bl_history_path", "History")
@@ -182,6 +264,7 @@ func _refresh_all() -> void:
 	_refresh_paths_tab()
 	_refresh_faults_tab()
 	_refresh_fault_labels()
+	_set_fault_view(_fault_view)
 
 
 func _refresh_fault_labels() -> void:
@@ -196,7 +279,7 @@ func _refresh_fault_labels() -> void:
 			multi_label.text = I18n.tr_key(label_key, key)
 
 
-func _refresh_status() -> void:
+func _refresh_status(_connected: bool = false) -> void:
 	var enabled := bool(ConfigLoader.game_config.get("brainlink", {}).get("enabled", false))
 	if not enabled:
 		_status.text = I18n.tr_key("hud.brainlink_off", "BrainLink: off")
@@ -218,10 +301,7 @@ func _refresh_options_tab() -> void:
 	_min_conf.value = float(bl.get("min_confidence", 0.1))
 	_full_conf.value = float(bl.get("full_confidence", 0.4))
 	var mode := str(bl.get("prediction_mode", "base"))
-	for i in _pred_mode.item_count:
-		if str(_pred_mode.get_item_metadata(i)) == mode:
-			_pred_mode.select(i)
-			break
+	_apply_prediction_mode(mode, false, false)
 	var weights: Array = bl.get("prediction_weights", [1.0, 1.0, 1.0, 1.0])
 	var wparts: PackedStringArray = []
 	for w in weights:
@@ -274,13 +354,73 @@ func _on_bl_toggle(key: String, value: bool) -> void:
 	InputManager._load_brainlink_send_flags()
 
 
+func _on_toggle_pred_mode_command() -> void:
+	var mode := str(ConfigLoader.game_config.get("brainlink", {}).get("prediction_mode", "base"))
+	_apply_prediction_mode("ml" if mode == "base" else "base", true, true)
+
+
 func _on_pred_mode_selected(index: int) -> void:
 	if _block_signals:
 		return
-	var mode := str(_pred_mode.get_item_metadata(index))
-	var bl: Dictionary = ConfigLoader.game_config.get("brainlink", {}).duplicate(true)
-	bl["prediction_mode"] = mode
-	ConfigLoader.save_user_settings({"brainlink": bl})
+	_apply_prediction_mode(str(_pred_mode.get_item_metadata(index)), true, true)
+
+
+func _on_fault_view_base_toggled(pressed: bool) -> void:
+	if _block_signals or not pressed:
+		return
+	_set_fault_view("base_fault")
+
+
+func _on_fault_view_multi_toggled(pressed: bool) -> void:
+	if _block_signals or not pressed:
+		return
+	_set_fault_view("multi_fault")
+
+
+func _set_fault_view(view: String) -> void:
+	_fault_view = "multi_fault" if view == "multi_fault" else "base_fault"
+	_block_signals = true
+	_fault_mode_base.button_pressed = _fault_view == "base_fault"
+	_fault_mode_ml.button_pressed = _fault_view == "multi_fault"
+	_block_signals = false
+	_update_fault_sections_visibility()
+
+
+func _apply_prediction_mode(mode: String, notify_client: bool, save_config: bool) -> void:
+	var normalized := "ml" if mode == "ml" else "base"
+	_block_signals = true
+	for i in _pred_mode.item_count:
+		if str(_pred_mode.get_item_metadata(i)) == normalized:
+			_pred_mode.select(i)
+			break
+	_block_signals = false
+	_update_options_fields_visibility(normalized)
+	if save_config:
+		var bl: Dictionary = ConfigLoader.game_config.get("brainlink", {}).duplicate(true)
+		bl["prediction_mode"] = normalized
+		ConfigLoader.save_user_settings({"brainlink": bl})
+	if notify_client and BrainLinkBridge.connected:
+		BrainLinkBridge.send_config_command(4)
+
+
+func _update_fault_sections_visibility() -> void:
+	var is_base_fault := _fault_view == "base_fault"
+	_base_title.visible = is_base_fault
+	_base_fault_grid.visible = is_base_fault
+	_multi_title.visible = not is_base_fault
+	_multi_count_row.visible = not is_base_fault
+	_multi_fault_grid.visible = not is_base_fault
+
+
+func _update_options_fields_visibility(pred_mode: String) -> void:
+	var is_ml := pred_mode == "ml"
+	_conf_threshold_label.visible = true
+	_conf_threshold.visible = true
+	_min_conf_label.visible = is_ml
+	_min_conf.visible = is_ml
+	_full_conf_label.visible = is_ml
+	_full_conf.visible = is_ml
+	_weights_row.visible = is_ml
 
 
 func _on_float_setting(key: String, value: float) -> void:

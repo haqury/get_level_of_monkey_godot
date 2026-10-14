@@ -16,33 +16,41 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Margin" type="MarginContainer" parent="HUD"]
+[node name="HudPanel" type="PanelContainer" parent="HUD"]
 layout_mode = 0
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 320.0
-offset_bottom = 160.0
+offset_right = 332.0
+offset_bottom = 172.0
 
-[node name="VBox" type="VBoxContainer" parent="HUD/Margin"]
+[node name="Margin" type="MarginContainer" parent="HUD/HudPanel"]
 layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
 
-[node name="HPLabel" type="Label" parent="HUD/Margin/VBox"]
+[node name="VBox" type="VBoxContainer" parent="HUD/HudPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HPLabel" type="Label" parent="HUD/HudPanel/Margin/VBox"]
 layout_mode = 2
 text = "HP: 3/3"
 
-[node name="EnergyLabel" type="Label" parent="HUD/Margin/VBox"]
+[node name="EnergyLabel" type="Label" parent="HUD/HudPanel/Margin/VBox"]
 layout_mode = 2
 text = "Energy: 100"
 
-[node name="LevelLabel" type="Label" parent="HUD/Margin/VBox"]
+[node name="LevelLabel" type="Label" parent="HUD/HudPanel/Margin/VBox"]
 layout_mode = 2
 text = "Level: 1"
 
-[node name="MLLabel" type="Label" parent="HUD/Margin/VBox"]
+[node name="MLLabel" type="Label" parent="HUD/HudPanel/Margin/VBox"]
 layout_mode = 2
 text = "ML conf: 0"
 
-[node name="TimerLabel" type="Label" parent="HUD/Margin/VBox"]
+[node name="TimerLabel" type="Label" parent="HUD/HudPanel/Margin/VBox"]
 layout_mode = 2
 text = "Time: 0"
 
@@ -51,14 +59,18 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -220.0
+offset_left = -240.0
 offset_top = 12.0
 offset_right = -12.0
-offset_bottom = 220.0
+offset_bottom = 240.0
 grow_horizontal = 0
 
-[node name="List" type="Label" parent="HUD/Top10"]
+[node name="Margin" type="MarginContainer" parent="HUD/Top10"]
 layout_mode = 2
+
+[node name="List" type="Label" parent="HUD/Top10/Margin"]
+layout_mode = 2
+autowrap_mode = 3
 text = "Top 10"
 
 [node name="Dialog" type="Control" parent="."]
@@ -70,6 +82,15 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="DialogBackdrop" type="ColorRect" parent="Dialog"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.25, 0.42, 0.62, 0.68)
+
 [node name="Panel" type="PanelContainer" parent="Dialog"]
 layout_mode = 1
 anchors_preset = 8
@@ -77,27 +98,32 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -240.0
-offset_top = -120.0
-offset_right = 240.0
-offset_bottom = 120.0
+offset_left = -280.0
+offset_top = -150.0
+offset_right = 280.0
+offset_bottom = 150.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="Dialog/Panel"]
+[node name="Margin" type="MarginContainer" parent="Dialog/Panel"]
 layout_mode = 2
 
-[node name="NameLabel" type="Label" parent="Dialog/Panel/VBox"]
+[node name="VBox" type="VBoxContainer" parent="Dialog/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="NameLabel" type="Label" parent="Dialog/Panel/Margin/VBox"]
 layout_mode = 2
 text = "NPC"
 
-[node name="TextLabel" type="Label" parent="Dialog/Panel/VBox"]
+[node name="TextLabel" type="Label" parent="Dialog/Panel/Margin/VBox"]
 layout_mode = 2
 autowrap_mode = 3
 text = "..."
 
-[node name="Buttons" type="VBoxContainer" parent="Dialog/Panel/VBox"]
+[node name="Buttons" type="VBoxContainer" parent="Dialog/Panel/Margin/VBox"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="Pause" type="Control" parent="."]
 visible = false
@@ -115,7 +141,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0, 0, 0, 0.55)
+color = Color(0.25, 0.42, 0.62, 0.68)
 
 [node name="Panel" type="PanelContainer" parent="Pause"]
 layout_mode = 1
@@ -124,41 +150,50 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -160.0
-offset_top = -140.0
-offset_right = 160.0
-offset_bottom = 140.0
+offset_left = -200.0
+offset_top = -200.0
+offset_right = 200.0
+offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="Pause/Panel"]
+[node name="Margin" type="MarginContainer" parent="Pause/Panel"]
 layout_mode = 2
 
-[node name="Restart" type="Button" parent="Pause/Panel/VBox"]
+[node name="VBox" type="VBoxContainer" parent="Pause/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PauseTitle" type="Label" parent="Pause/Panel/Margin/VBox"]
+layout_mode = 2
+text = "Menu"
+horizontal_alignment = 1
+
+[node name="Restart" type="Button" parent="Pause/Panel/Margin/VBox"]
 layout_mode = 2
 text = "Restart minigame"
 
-[node name="Load" type="Button" parent="Pause/Panel/VBox"]
+[node name="Load" type="Button" parent="Pause/Panel/Margin/VBox"]
 layout_mode = 2
 text = "Load"
 
-[node name="Settings" type="Button" parent="Pause/Panel/VBox"]
+[node name="Settings" type="Button" parent="Pause/Panel/Margin/VBox"]
 layout_mode = 2
-text = "Toggle RU/EN"
+text = "Settings"
 
-[node name="BrainLink" type="Button" parent="Pause/Panel/VBox"]
+[node name="BrainLink" type="Button" parent="Pause/Panel/Margin/VBox"]
 layout_mode = 2
-text = "BrainLink connect"
+text = "BrainLink"
 
-[node name="ExitMenu" type="Button" parent="Pause/Panel/VBox"]
+[node name="ExitMenu" type="Button" parent="Pause/Panel/Margin/VBox"]
 layout_mode = 2
 text = "Exit to menu"
 
-[connection signal="pressed" from="Pause/Panel/VBox/Restart" to="." method="_on_pause_restart_pressed"]
-[connection signal="pressed" from="Pause/Panel/VBox/Load" to="." method="_on_pause_load_pressed"]
-[connection signal="pressed" from="Pause/Panel/VBox/Settings" to="." method="_on_pause_settings_pressed"]
-[connection signal="pressed" from="Pause/Panel/VBox/BrainLink" to="." method="_on_pause_brainlink_pressed"]
-[connection signal="pressed" from="Pause/Panel/VBox/ExitMenu" to="." method="_on_pause_exit_pressed"]
+[connection signal="pressed" from="Pause/Panel/Margin/VBox/Restart" to="." method="_on_pause_restart_pressed"]
+[connection signal="pressed" from="Pause/Panel/Margin/VBox/Load" to="." method="_on_pause_load_pressed"]
+[connection signal="pressed" from="Pause/Panel/Margin/VBox/Settings" to="." method="_on_pause_settings_pressed"]
+[connection signal="pressed" from="Pause/Panel/Margin/VBox/BrainLink" to="." method="_on_pause_brainlink_pressed"]
+[connection signal="pressed" from="Pause/Panel/Margin/VBox/ExitMenu" to="." method="_on_pause_exit_pressed"]
 
 [node name="SettingsMenu" parent="." instance=ExtResource("2")]
 visible = false

@@ -1,4 +1,13 @@
+@tool
 extends CanvasLayer
+
+enum EditorUiPreview { HUD, PAUSE, DIALOG, SETTINGS, BRAINLINK }
+
+@export var editor_ui_preview: EditorUiPreview = EditorUiPreview.HUD:
+	set(value):
+		editor_ui_preview = value
+		if Engine.is_editor_hint():
+			call_deferred("update_editor_ui_preview")
 
 var pause_open: bool = false
 var dialog_open: bool = false
@@ -14,21 +23,68 @@ var _pause_hidden_for_dialog: bool = false
 @onready var pause: Control = $Pause
 @onready var settings_menu: Control = $SettingsMenu
 @onready var brainlink_settings_menu: Control = $BrainlinkSettingsMenu
-@onready var hp_label: Label = $HUD/Margin/VBox/HPLabel
-@onready var energy_label: Label = $HUD/Margin/VBox/EnergyLabel
-@onready var level_label: Label = $HUD/Margin/VBox/LevelLabel
-@onready var ml_label: Label = $HUD/Margin/VBox/MLLabel
-@onready var timer_label: Label = $HUD/Margin/VBox/TimerLabel
+@onready var hp_label: Label = $HUD/HudPanel/Margin/VBox/HPLabel
+@onready var energy_label: Label = $HUD/HudPanel/Margin/VBox/EnergyLabel
+@onready var level_label: Label = $HUD/HudPanel/Margin/VBox/LevelLabel
+@onready var ml_label: Label = $HUD/HudPanel/Margin/VBox/MLLabel
+@onready var timer_label: Label = $HUD/HudPanel/Margin/VBox/TimerLabel
 @onready var top10_panel: Control = $HUD/Top10
-@onready var dialog_name: Label = $Dialog/Panel/VBox/NameLabel
-@onready var dialog_text: Label = $Dialog/Panel/VBox/TextLabel
-@onready var dialog_buttons: VBoxContainer = $Dialog/Panel/VBox/Buttons
+@onready var dialog_name: Label = $Dialog/Panel/Margin/VBox/NameLabel
+@onready var dialog_text: Label = $Dialog/Panel/Margin/VBox/TextLabel
+@onready var dialog_buttons: VBoxContainer = $Dialog/Panel/Margin/VBox/Buttons
 
 var _dialog_callback: Callable
 
 
+func update_editor_ui_preview() -> void:
+	if not Engine.is_editor_hint():
+		return
+	var edited := get_tree().get_edited_scene_root()
+	if edited != self:
+		return
+	var hud_n := get_node_or_null("HUD") as Control
+	var pause_n := get_node_or_null("Pause") as Control
+	var dialog_n := get_node_or_null("Dialog") as Control
+	var settings_n := get_node_or_null("SettingsMenu") as Control
+	var brainlink_n := get_node_or_null("BrainlinkSettingsMenu") as Control
+	for n in [hud_n, pause_n, dialog_n, settings_n, brainlink_n]:
+		if n:
+			n.hide()
+	match editor_ui_preview:
+		EditorUiPreview.HUD:
+			if hud_n:
+				hud_n.show()
+		EditorUiPreview.PAUSE:
+			if pause_n:
+				pause_n.show()
+				_refresh_pause_menu()
+		EditorUiPreview.DIALOG:
+			if dialog_n:
+				dialog_n.show()
+		EditorUiPreview.SETTINGS:
+			if settings_n:
+				settings_n.show()
+				if settings_n.has_method("prepare_editor_preview_visible"):
+					settings_n.prepare_editor_preview_visible()
+		EditorUiPreview.BRAINLINK:
+			if brainlink_n:
+				brainlink_n.show()
+				if brainlink_n.has_method("prepare_editor_preview_visible"):
+					brainlink_n.prepare_editor_preview_visible()
+	GameUiTheme.apply_editor_preview(self)
+
+
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		call_deferred("update_editor_ui_preview")
+		return
 	layer = 100
+	GameUiTheme.apply_to_node(self)
+	GameUiTheme.apply_modal_overlay(pause.get_node("PauseBackdrop"))
+	if dialog.has_node("DialogBackdrop"):
+		GameUiTheme.apply_modal_overlay(dialog.get_node("DialogBackdrop") as ColorRect)
+	GameUiTheme.style_hud_panel(hud.get_node("HudPanel") as PanelContainer)
+	GameUiTheme.style_hud_panel(top10_panel)
 	hud.hide()
 	dialog.hide()
 	pause.hide()
@@ -120,7 +176,7 @@ func show_top10(mode: String) -> void:
 		top10_panel.hide()
 		return
 	top10_panel.show()
-	var list: Label = top10_panel.get_node("List")
+	var list: Label = top10_panel.get_node("Margin/List") as Label
 	var lines: PackedStringArray = []
 	var i := 1
 	for run in SaveManager.get_top10(mode, false):
@@ -140,18 +196,21 @@ func show_dialog(npc_name: String, text: String, options: Array = []) -> void:
 		pause.hide()
 	dialog.show()
 	dialog_name.text = npc_name
+	GameUiTheme.title_label_settings(dialog_name)
 	dialog_text.text = text
 	for c in dialog_buttons.get_children():
 		c.queue_free()
 	if options.is_empty():
 		var btn := Button.new()
 		btn.text = I18n.tr_key("dialog.continue", "Continue")
+		GameUiTheme.menu_button_settings(btn)
 		btn.pressed.connect(_close_dialog)
 		dialog_buttons.add_child(btn)
 	else:
 		for opt in options:
 			var btn2 := Button.new()
 			btn2.text = str(opt.get("text", "OK"))
+			GameUiTheme.menu_button_settings(btn2)
 			var cb: Callable = opt.get("callback", Callable())
 			btn2.pressed.connect(func(): _on_dialog_option(cb))
 			dialog_buttons.add_child(btn2)
@@ -226,7 +285,10 @@ func _on_pause_brainlink_pressed() -> void:
 
 
 func _refresh_pause_menu() -> void:
-	var box: VBoxContainer = pause.get_node("Panel/VBox")
+	var box: VBoxContainer = pause.get_node("Panel/Margin/VBox")
+	var title: Label = box.get_node("PauseTitle") as Label
+	GameUiTheme.title_label_settings(title)
+	title.text = I18n.tr_key("pause.title", "Menu")
 	box.get_node("Restart").text = I18n.tr_key("pause.restart", "Restart")
 	box.get_node("Load").text = I18n.tr_key("pause.load", "Load")
 	box.get_node("Settings").text = I18n.tr_key("pause.settings", "Settings")

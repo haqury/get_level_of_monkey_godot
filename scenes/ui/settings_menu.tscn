@@ -113,6 +113,16 @@ text = "Apply display"
 [node name="Controls" type="VBoxContainer" parent="Panel/Margin/VBox/Tabs"]
 visible = false
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="KeyboardEnabled" type="CheckBox" parent="Panel/Margin/VBox/Tabs/Controls"]
+layout_mode = 2
+button_pressed = true
+text = "Keyboard"
+
+[node name="GamepadEnabled" type="CheckBox" parent="Panel/Margin/VBox/Tabs/Controls"]
+layout_mode = 2
+text = "Gamepad"
 
 [node name="Scroll" type="ScrollContainer" parent="Panel/Margin/VBox/Tabs/Controls"]
 layout_mode = 2

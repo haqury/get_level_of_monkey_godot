@@ -47,16 +47,18 @@ func _load_brainlink_send_flags() -> void:
 	send_to_ml = bool(bl.get("send_to_ml", false))
 
 
+func _input(event: InputEvent) -> void:
+	if GameControls.gamepad_enabled():
+		return
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		get_viewport().set_input_as_handled()
+
+
 func _process(_delta: float) -> void:
-	keyboard_active = (
-		Input.is_action_pressed("move_left")
-		or Input.is_action_pressed("move_right")
-		or Input.is_action_pressed("move_up")
-		or Input.is_action_pressed("move_down")
-	)
-	if Input.is_action_just_pressed("action"):
+	keyboard_active = GameControls.get_keyboard_vector().length_squared() > 0.01
+	if GameControls.is_config_action_just_pressed("action"):
 		action_pressed.emit()
-	if Input.is_action_just_pressed("sit_pause"):
+	if GameControls.is_config_action_just_pressed("sit_pause"):
 		sit_pause_pressed.emit()
 	_update_movement_state()
 	_send_outbound_brainlink_events()
@@ -101,8 +103,15 @@ func last_keyboard_event_for_ml() -> String:
 
 
 func _update_movement_state() -> void:
-	var kb := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	_action_sit_hold = Input.is_action_pressed("action") and kb.length_squared() <= 0.0001
+	var kb := GameControls.get_keyboard_vector()
+	var pad := Vector2.ZERO
+	if kb.length_squared() <= 0.0001:
+		pad = GameControls.get_gamepad_vector()
+	_action_sit_hold = (
+		GameControls.is_config_action_pressed("action")
+		and kb.length_squared() <= 0.0001
+		and pad.length_squared() <= 0.0001
+	)
 	if _action_sit_hold:
 		movement_source = SOURCE_NONE
 		_is_using_brainlink = false
@@ -112,13 +121,20 @@ func _update_movement_state() -> void:
 		_last_keyboard_event = ""
 		return
 	if kb.length_squared() > 0.01:
-		kb = kb.normalized()
 		_track_keyboard_from_vector(kb)
 		_keyboard_event_recordable = _is_cardinal(kb)
 		_current_keyboard_event = _last_keyboard_event if _keyboard_event_recordable else ""
 		movement_source = SOURCE_KEYBOARD
 		_is_using_brainlink = false
 		_cached_move = kb
+	elif pad.length_squared() > 0.01:
+		var pn := pad.normalized()
+		_track_keyboard_from_vector(pn)
+		_keyboard_event_recordable = _is_cardinal(pn)
+		_current_keyboard_event = ""
+		movement_source = SOURCE_KEYBOARD
+		_is_using_brainlink = false
+		_cached_move = pn
 	elif keyboard_active:
 		movement_source = SOURCE_NONE
 		_current_keyboard_event = ""

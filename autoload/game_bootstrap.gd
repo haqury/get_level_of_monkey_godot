@@ -3,6 +3,7 @@ extends Node
 
 func _ready() -> void:
 	get_tree().paused = false
+	GameUiTheme.apply_to_root(get_tree().root)
 	GameControls.apply_from_config(ConfigLoader.game_config)
 	apply_window_from_config()
 

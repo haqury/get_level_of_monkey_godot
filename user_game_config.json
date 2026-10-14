@@ -1,6 +1,67 @@
 {
+	"brainlink": {
+		"base_fault": {
+			"attention": 0.0,
+			"delta": 10.0,
+			"high_alpha": 10.0,
+			"high_beta": 10.0,
+			"high_gamma": 10.0,
+			"low_alpha": 10.0,
+			"low_beta": 10.0,
+			"low_gamma": 10.0,
+			"meditation": 0.0,
+			"signal": 0.0,
+			"theta": 10.0
+		},
+		"check_interval": 0.016,
+		"confidence_threshold": 0.1,
+		"enabled": true,
+		"full_confidence": 0.4,
+		"history_path": "C:\\BLconfig\\test.json",
+		"memory_name": "brainlink_data",
+		"min_confidence": 0.1,
+		"model_path": "C:\\Users\\haqury\\PycharmProjects\\BrainLinkClient\\models_ml\\brainlink_classifier.pkl",
+		"multi_count": 8.0,
+		"multi_fault": {
+			"attention": 1.0,
+			"delta": 3.0,
+			"high_alpha": 3.0,
+			"high_beta": 3.0,
+			"high_gamma": 3.0,
+			"low_alpha": 3.0,
+			"low_beta": 3.0,
+			"low_gamma": 3.0,
+			"meditation": 1.0,
+			"signal": 0.0,
+			"theta": 3.0
+		},
+		"prediction_mode": "base",
+		"prediction_weights": [
+			1.0,
+			1.0,
+			1.0,
+			1.0
+		],
+		"send_brainlink_events": true,
+		"send_keyboard_events": true,
+		"send_to_history": true,
+		"send_to_ml": true
+	},
+	"controls": {
+		"gamepad_enabled": false,
+		"keyboard": {
+			"action": "space",
+			"down": "arrow_down",
+			"left": "arrow_left",
+			"right": "arrow_right",
+			"sit_pause": "p",
+			"up": "arrow_up"
+		},
+		"keyboard_enabled": true
+	},
+	"locale": "ru",
 	"player": {
-		"cheater_mode": false,
+		"cheater_mode": true,
 		"energy_regen_rate": 5.0,
 		"initial_energy": 100.0,
 		"initial_hp": 3.0,
@@ -11,8 +72,8 @@
 	"window": {
 		"fps": 60.0,
 		"fullscreen": true,
-		"height": 900,
+		"height": 900.0,
 		"title": "Fucking Pickup",
-		"width": 1600
+		"width": 1600.0
 	}
 }

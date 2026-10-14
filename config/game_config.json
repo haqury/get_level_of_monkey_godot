@@ -64,6 +64,8 @@
     "multi_count": 8
   },
   "controls": {
+    "keyboard_enabled": true,
+    "gamepad_enabled": false,
     "keyboard": {
       "up": "arrow_up",
       "down": "arrow_down",

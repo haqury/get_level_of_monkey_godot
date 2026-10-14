@@ -19,6 +19,7 @@ func reload() -> void:
 		game_config = _deep_merge(game_config, user_cfg)
 	balance = _load_json("res://config/balance.json", {})
 	brainlink_paths = _load_json("res://config/brainlink_path.json", {})
+	GameControls.apply_from_config(game_config)
 
 
 func save_user_settings(patch: Dictionary) -> void:
@@ -28,6 +29,8 @@ func save_user_settings(patch: Dictionary) -> void:
 	if f:
 		f.store_string(JSON.stringify(user_cfg, "\t"))
 	reload()
+	if patch.has("controls"):
+		GameControls.apply_from_config(game_config)
 
 
 func _deep_merge(base: Dictionary, over: Dictionary) -> Dictionary:
@@ -67,6 +70,18 @@ func _default_game_config() -> Dictionary:
 			"cheater_mode": false,
 		},
 		"brainlink": {"enabled": false, "memory_name": "brainlink_data", "check_interval": 0.016},
+		"controls": {
+			"keyboard_enabled": true,
+			"gamepad_enabled": false,
+			"keyboard": {
+				"up": "arrow_up",
+				"down": "arrow_down",
+				"left": "arrow_left",
+				"right": "arrow_right",
+				"action": "space",
+				"sit_pause": "p",
+			},
+		},
 		"locale": "ru",
 		"multiplayer": {
 			"enabled": true,
