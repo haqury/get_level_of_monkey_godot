@@ -60,16 +60,19 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	keyboard_active = GameControls.get_keyboard_vector().length_squared() > 0.01
 	if GameControls.is_config_action_just_pressed("action"):
 		action_pressed.emit()
 	if GameControls.is_config_action_just_pressed("sit_pause"):
 		sit_pause_pressed.emit()
-	_update_movement_state()
 	_send_player_ground_truth(delta)
 
 
+func _physics_process(_delta: float) -> void:
+	_update_movement_state()
+
+
 func get_movement_vector() -> Vector2:
+	_update_movement_state()
 	return _cached_move
 
 
@@ -110,6 +113,7 @@ func last_keyboard_event_for_ml() -> String:
 
 func _update_movement_state() -> void:
 	var kb := GameControls.get_keyboard_vector()
+	keyboard_active = kb.length_squared() > 0.01
 	var pad := Vector2.ZERO
 	if kb.length_squared() <= 0.0001:
 		pad = GameControls.get_gamepad_vector()
@@ -133,6 +137,7 @@ func _update_movement_state() -> void:
 		movement_source = SOURCE_KEYBOARD
 		_is_using_brainlink = false
 		_cached_move = kb
+		brainlink_vector = Vector2.ZERO
 	elif pad.length_squared() > 0.01:
 		var pn := pad.normalized()
 		_track_keyboard_from_vector(pn)
@@ -141,12 +146,7 @@ func _update_movement_state() -> void:
 		movement_source = SOURCE_KEYBOARD
 		_is_using_brainlink = false
 		_cached_move = pn
-	elif keyboard_active:
-		movement_source = SOURCE_NONE
-		_current_keyboard_event = ""
-		_keyboard_event_recordable = false
-		_is_using_brainlink = false
-		_cached_move = Vector2.ZERO
+		brainlink_vector = Vector2.ZERO
 	elif brainlink_vector.length_squared() > 0.01:
 		movement_source = SOURCE_BRAINLINK
 		_current_keyboard_event = ""

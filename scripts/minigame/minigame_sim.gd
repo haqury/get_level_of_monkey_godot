@@ -84,24 +84,30 @@ func update_sim(
 
 
 func _spawn_group() -> void:
-	for _i in _spawn_group_size:
-		monkeys.append(_create_monkey())
+	for i in _spawn_group_size:
+		monkeys.append(_create_monkey(i))
 
 
-func _create_monkey() -> Dictionary:
+func _create_monkey(slot: int = 0) -> Dictionary:
 	var stats_by_age: Dictionary = _balance.get("monkeys", {}).get("stats_by_age", {})
 	var age := _pick_age()
 	var stats: Dictionary = stats_by_age.get(str(age), {"throw_speed": 1.0, "accuracy": 0.5, "cooldown": 2.0})
 	var pos := Vector2.ZERO
 	var move_dir := Vector2.ZERO
+	# Queue behind the entry so a group walks in from the path start, not mid-road.
+	var entry_gap := 2.4
 	if monkey_mode == "NorthSouth":
+		var go_right := randf() > 0.5
+		move_dir = Vector2(1.0 if go_right else -1.0, 0.0)
 		pos.y = CLEARING_HALF_H if randf() > 0.5 else -CLEARING_HALF_H
-		pos.x = -CLEARING_HALF_W + randf() * (CLEARING_HALF_W * 2.0)
-		move_dir = Vector2(1 if randf() > 0.5 else -1, 0)
+		var entry_x := -CLEARING_HALF_W if go_right else CLEARING_HALF_W
+		pos.x = entry_x - move_dir.x * entry_gap * float(slot)
 	else:
+		var go_down := randf() > 0.5
+		move_dir = Vector2(0.0, 1.0 if go_down else -1.0)
 		pos.x = CLEARING_HALF_W if randf() > 0.5 else -CLEARING_HALF_W
-		pos.y = -CLEARING_HALF_H + randf() * (CLEARING_HALF_H * 2.0)
-		move_dir = Vector2(0, 1 if randf() > 0.5 else -1)
+		var entry_y := -CLEARING_HALF_H if go_down else CLEARING_HALF_H
+		pos.y = entry_y - move_dir.y * entry_gap * float(slot)
 	return {
 		"age": age,
 		"pos": pos,
@@ -204,7 +210,13 @@ func _poop_hits_players(p: Dictionary, player_pos: Vector2, extras: Array) -> bo
 func build_snapshot(host_hp: int, client_hp: int) -> Dictionary:
 	var mk: Array = []
 	for m in monkeys:
-		mk.append({"x": m["pos"].x, "z": m["pos"].y, "age": m["age"]})
+		mk.append({
+			"x": m["pos"].x,
+			"z": m["pos"].y,
+			"age": m["age"],
+			"dx": m["move_dir"].x,
+			"dy": m["move_dir"].y,
+		})
 	var pp: Array = []
 	for p in poops:
 		if p.get("alive", false):

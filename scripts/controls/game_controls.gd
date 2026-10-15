@@ -114,6 +114,9 @@ static func is_config_action_just_pressed(config_key: String) -> bool:
 static func get_keyboard_vector() -> Vector2:
 	if not keyboard_enabled():
 		return Vector2.ZERO
+	var from_actions := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if from_actions.length_squared() > 0.01:
+		return from_actions.normalized()
 	var kb_cfg := keyboard_from_config()
 	var x := 0.0
 	var y := 0.0

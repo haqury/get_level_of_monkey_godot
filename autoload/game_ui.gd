@@ -75,8 +75,22 @@ func update_editor_ui_preview() -> void:
 	GameUiTheme.apply_editor_preview(self)
 
 
+func _enter_tree() -> void:
+	if not Engine.is_editor_hint():
+		return
+	# The autoload is a second copy of this scene. It is not the tab being edited,
+	# so its CanvasLayer must not draw over the editor docks.
+	var edited := get_tree().edited_scene_root if get_tree() else null
+	if edited != self:
+		visible = false
+
+
 func _ready() -> void:
 	if Engine.is_editor_hint():
+		var edited := get_tree().edited_scene_root if get_tree() else null
+		if edited != self:
+			visible = false
+			return
 		call_deferred("update_editor_ui_preview")
 		return
 	layer = 100

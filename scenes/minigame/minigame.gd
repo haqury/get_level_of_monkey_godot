@@ -5,8 +5,12 @@ extends BaseLocation
 var _sim: MinigameSim
 var _monkey_sprites: Array = []
 var _poop_sprites: Array = []
+var _monkey_tex: Dictionary = {}
 var _client_hp_mirror: int = 3
 var _game_over_handled: bool = false
+
+const MONKEY_WALK_FPS := 6.0
+const MONKEY_HEIGHT_UNITS := {1: 1.15, 2: 1.35, 3: 1.6, 4: 1.5}
 
 
 func _ready() -> void:
@@ -14,6 +18,7 @@ func _ready() -> void:
 	scene_id = "minigame"
 	_sim = MinigameSim.new()
 	add_child(_sim)
+	_load_monkey_textures()
 	_build_background()
 	setup_exits([{"name": "to_cave", "pos": Vector2(0, -25), "target_scene": "cave"}])
 
@@ -96,7 +101,11 @@ func apply_network_snapshot(msg: Dictionary) -> void:
 	for m in msg.get("monkeys", []):
 		if typeof(m) != TYPE_DICTIONARY:
 			continue
-		_add_monkey_sprite(Vector2(float(m.get("x", 0)), float(m.get("z", 0))), int(m.get("age", 1)))
+		_add_monkey_sprite(
+			Vector2(float(m.get("x", 0)), float(m.get("z", 0))),
+			int(m.get("age", 1)),
+			Vector2(float(m.get("dx", 0)), float(m.get("dy", 0))),
+		)
 	for p in msg.get("poops", []):
 		if typeof(p) != TYPE_DICTIONARY:
 			continue
@@ -215,7 +224,9 @@ func _sync_visuals() -> void:
 		n.queue_free()
 	for i in _sim.monkeys.size():
 		var spr: Sprite2D = _monkey_sprites[i]
-		spr.position = GameState.units_to_px(_sim.monkeys[i]["pos"])
+		var m: Dictionary = _sim.monkeys[i]
+		spr.position = GameState.units_to_px(m["pos"])
+		_apply_monkey_visual(spr, int(m["age"]), m["move_dir"], _sim.game_time, float(i))
 	while _poop_sprites.size() < _sim.poops.size():
 		var p: Dictionary = _sim.poops[_poop_sprites.size()]
 		_add_poop_sprite(p["pos"])
@@ -227,11 +238,63 @@ func _sync_visuals() -> void:
 		spr2.position = GameState.units_to_px(_sim.poops[j]["pos"])
 
 
-func _add_monkey_sprite(pos: Vector2, age: int) -> void:
-	var spr := WorldVisuals.prop_sprite("res://assets/sprites/monkey/age%d.png" % age, 1.0)
+func _add_monkey_sprite(pos: Vector2, age: int, move: Vector2 = Vector2.ZERO) -> void:
+	var spr := Sprite2D.new()
+	spr.centered = true
 	spr.position = GameState.units_to_px(pos)
+	_apply_monkey_visual(spr, age, move, _sim.game_time, float(_monkey_sprites.size()))
 	entities.add_child(spr)
 	_monkey_sprites.append(spr)
+
+
+func _load_monkey_textures() -> void:
+	_monkey_tex.clear()
+	for age in [1, 2, 3, 4]:
+		for facing in ["down", "left", "up"]:
+			for frame_name in ["idle", "1", "2"]:
+				var path := "res://assets/sprites/monkey/age%d/%s_%s.png" % [age, facing, frame_name]
+				var tex := _load_sprite_texture(path)
+				if tex != null:
+					_monkey_tex["%d_%s_%s" % [age, facing, frame_name]] = tex
+
+
+func _load_sprite_texture(res_path: String) -> Texture2D:
+	var imported := load(res_path) as Texture2D
+	if imported != null:
+		return imported
+	var abs_path := ProjectSettings.globalize_path(res_path)
+	if not FileAccess.file_exists(abs_path):
+		return null
+	var img := Image.load_from_file(abs_path)
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
+
+
+func _apply_monkey_visual(spr: Sprite2D, age: int, move: Vector2, time: float, slot: float) -> void:
+	age = clampi(age, 1, 4)
+	var facing := "down"
+	var flip := false
+	if move.length_squared() > 0.0001 and absf(move.x) >= absf(move.y):
+		facing = "left"
+		flip = move.x > 0.0
+	elif move.y < 0.0:
+		facing = "up"
+	var frame := "idle"
+	if move.length_squared() > 0.0001:
+		var step := int((time + slot * 0.35) * MONKEY_WALK_FPS) % 2
+		frame = "1" if step == 0 else "2"
+	var key := "%d_%s_%s" % [age, facing, frame]
+	if not _monkey_tex.has(key):
+		key = "%d_down_idle" % age
+	if _monkey_tex.has(key):
+		spr.texture = _monkey_tex[key]
+	spr.flip_h = flip
+	if spr.texture == null:
+		return
+	var units := float(MONKEY_HEIGHT_UNITS.get(age, 1.3))
+	var s := units * GameState.PIXELS_PER_UNIT / maxf(1.0, float(spr.texture.get_height()))
+	spr.scale = Vector2(s, s)
 
 
 func _add_poop_sprite(pos: Vector2) -> void:
