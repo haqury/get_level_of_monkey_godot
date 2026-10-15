@@ -80,28 +80,50 @@ layout_mode = 2
 text = "Network"
 
 [node name="NetworkPanel" type="VBoxContainer" parent="Panel/Margin/VBox"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Host" type="Button" parent="Panel/Margin/VBox/NetworkPanel"]
+[node name="JoinHost" type="LineEdit" parent="Panel/Margin/VBox/NetworkPanel"]
 layout_mode = 2
-text = "Host LAN"
+placeholder_text = "IP:port"
 
-[node name="HostStart" type="Button" parent="Panel/Margin/VBox/NetworkPanel"]
-layout_mode = 2
-text = "Start game (host)"
-
-[node name="JoinHost" type="LineEdit" parent="Panel/Margin/VBox"]
-layout_mode = 2
-placeholder_text = "Host IP"
-
-[node name="Join" type="Button" parent="Panel/Margin/VBox"]
+[node name="Join" type="Button" parent="Panel/Margin/VBox/NetworkPanel"]
 layout_mode = 2
 text = "Join"
 
-[node name="HostInfo" type="Label" parent="Panel/Margin/VBox"]
+[node name="Host" type="Button" parent="Panel/Margin/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Host"
+
+[node name="LanTitle" type="Label" parent="Panel/Margin/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Games on the network"
+horizontal_alignment = 1
+
+[node name="LanEmpty" type="Label" parent="Panel/Margin/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Nobody is hosting"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="HostList" type="VBoxContainer" parent="Panel/Margin/VBox/NetworkPanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="HostSample" type="Button" parent="Panel/Margin/VBox/NetworkPanel/HostList"]
+visible = false
+layout_mode = 2
+text = "192.168.0.1:17777"
+
+[node name="HostInfo" type="Label" parent="Panel/Margin/VBox/NetworkPanel"]
 layout_mode = 2
 horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Back" type="Button" parent="Panel/Margin/VBox/NetworkPanel"]
+layout_mode = 2
+text = "Back"
 
 [node name="Config" type="Button" parent="Panel/Margin/VBox"]
 layout_mode = 2
@@ -123,9 +145,9 @@ text = "Quit"
 [connection signal="pressed" from="Panel/Margin/VBox/Solo" to="." method="_on_solo_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/SoloLoad" to="." method="_on_solo_load_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/Network" to="." method="_on_network_pressed"]
+[connection signal="pressed" from="Panel/Margin/VBox/NetworkPanel/Join" to="." method="_on_join_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/NetworkPanel/Host" to="." method="_on_host_pressed"]
-[connection signal="pressed" from="Panel/Margin/VBox/NetworkPanel/HostStart" to="." method="_on_host_start_pressed"]
-[connection signal="pressed" from="Panel/Margin/VBox/Join" to="." method="_on_join_pressed"]
+[connection signal="pressed" from="Panel/Margin/VBox/NetworkPanel/Back" to="." method="_on_network_back_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/Config" to="." method="_on_config_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/BrainLink" to="." method="_on_brainlink_pressed"]
 [connection signal="pressed" from="Panel/Margin/VBox/Quit" to="." method="_on_quit_pressed"]

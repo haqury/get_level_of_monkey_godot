@@ -97,19 +97,39 @@ func apply_network_snapshot(msg: Dictionary) -> void:
 		var rp = session.get_node("RemotePlayer")
 		if rp.has_method("set_defeated") and hp_map.has("0"):
 			rp.set_defeated(int(hp_map["0"]) <= 0)
-	_clear_visuals()
-	for m in msg.get("monkeys", []):
+	var monkeys: Array = msg.get("monkeys", [])
+	while _monkey_sprites.size() < monkeys.size():
+		_add_monkey_sprite(Vector2.ZERO, 1)
+	while _monkey_sprites.size() > monkeys.size():
+		var extra_monkey: Node = _monkey_sprites.pop_back()
+		extra_monkey.queue_free()
+	for i in monkeys.size():
+		var m: Variant = monkeys[i]
 		if typeof(m) != TYPE_DICTIONARY:
 			continue
-		_add_monkey_sprite(
-			Vector2(float(m.get("x", 0)), float(m.get("z", 0))),
-			int(m.get("age", 1)),
-			Vector2(float(m.get("dx", 0)), float(m.get("dy", 0))),
+		var monkey: Dictionary = m
+		var spr: Sprite2D = _monkey_sprites[i]
+		spr.position = GameState.units_to_px(Vector2(float(monkey.get("x", 0)), float(monkey.get("z", 0))))
+		_apply_monkey_visual(
+			spr,
+			int(monkey.get("age", 1)),
+			Vector2(float(monkey.get("dx", 0)), float(monkey.get("dy", 0))),
+			_sim.game_time,
+			float(i),
 		)
-	for p in msg.get("poops", []):
+	var poops: Array = msg.get("poops", [])
+	while _poop_sprites.size() < poops.size():
+		_add_poop_sprite(Vector2.ZERO)
+	while _poop_sprites.size() > poops.size():
+		var extra_poop: Node = _poop_sprites.pop_back()
+		extra_poop.queue_free()
+	for j in poops.size():
+		var p: Variant = poops[j]
 		if typeof(p) != TYPE_DICTIONARY:
 			continue
-		_add_poop_sprite(Vector2(float(p.get("x", 0)), float(p.get("z", 0))))
+		var poop: Dictionary = p
+		var poop_spr: Sprite2D = _poop_sprites[j]
+		poop_spr.position = GameState.units_to_px(Vector2(float(poop.get("x", 0)), float(poop.get("z", 0))))
 	GameUI.set_survival_timer(_sim.game_time, true)
 	GameUI.refresh_hud()
 	if _sim.is_game_over and not was_over and not _game_over_handled:

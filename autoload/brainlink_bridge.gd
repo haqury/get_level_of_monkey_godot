@@ -5,7 +5,8 @@ signal connection_changed(connected: bool)
 const CMD_QUEUE_USER_PATH := "user://brainlink_cmd_queue.json"
 const SHIM_PID_USER_PATH := "user://brainlink_shim.pid"
 const HEARTBEAT_STALE_MS := 3000
-const SHIM_STARTUP_GRACE_MS := 5000
+const SHIM_STARTUP_GRACE_MS := 15000
+const _HOST_SCRIPT := preload("res://autoload/brainlink_host_script.gd")
 
 var connected: bool = false
 var shm_attached: bool = false
@@ -18,6 +19,8 @@ var _connect_requested: bool = false
 var _connect_enqueued: bool = false
 var _reconnect_cooldown: float = 0.0
 var _last_heartbeat_ms: int = 0
+var _host_missing_warned: bool = false
+var _last_status_text: String = ""
 
 
 func _ready() -> void:
@@ -174,17 +177,24 @@ func _start_shim_if_needed() -> void:
 	if _shim_we_spawned and _shim_pid > 0:
 		return
 	_cleanup_stale_shim_pid_file()
-	var script_path := ProjectSettings.globalize_path("res://tools/brainlink_shim.py")
-	if not FileAccess.file_exists(script_path):
-		push_warning("BrainLink shim script missing")
+	var script_path := _ensure_host_script()
+	if script_path.is_empty():
+		if not _host_missing_warned:
+			push_warning("BrainLink host script missing")
+			_host_missing_warned = true
 		return
 	var status_global := ProjectSettings.globalize_path("user://brainlink_status.json")
 	var memory_name := str(ConfigLoader.game_config.get("brainlink", {}).get("memory_name", "brainlink_data"))
-	var args := PackedStringArray([script_path, status_global, memory_name])
-	var pid := OS.create_process("python", args, false)
+	var pid := OS.create_process(
+		_powershell_exe(),
+		PackedStringArray([
+			"-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+			script_path, status_global, memory_name,
+		]),
+		false,
+	)
 	if pid <= 0:
-		pid = OS.create_process("py", PackedStringArray(["-3"]) + args, false)
-	if pid <= 0:
+		push_warning("BrainLink host failed to start")
 		return
 	_shim_pid = pid
 	_shim_we_spawned = true
@@ -231,9 +241,35 @@ func _enqueue_connect_command() -> void:
 	})
 
 
+func _powershell_exe() -> String:
+	var system_root := OS.get_environment("SystemRoot")
+	if system_root.is_empty():
+		system_root = "C:/Windows"
+	var candidate := system_root.path_join("System32/WindowsPowerShell/v1.0/powershell.exe")
+	if FileAccess.file_exists(candidate):
+		return candidate
+	return "powershell.exe"
+
+
+func _ensure_host_script() -> String:
+	var text := ""
+	const PACKED := "res://tools/brainlink_host.ps1"
+	if FileAccess.file_exists(PACKED):
+		text = FileAccess.get_file_as_string(PACKED)
+	if text.is_empty():
+		text = str(_HOST_SCRIPT.TEXT)
+	if text.is_empty():
+		return ""
+	var out_path := "user://brainlink_host.ps1"
+	var out := FileAccess.open(out_path, FileAccess.WRITE)
+	if out == null:
+		return ""
+	out.store_string(text)
+	out.close()
+	return ProjectSettings.globalize_path(out_path)
+
+
 func _enqueue_shim_command(payload: Dictionary) -> void:
-	if not FileAccess.file_exists(ProjectSettings.globalize_path("res://tools/brainlink_shim.py")):
-		return
 	var queue: Array = []
 	if FileAccess.file_exists(CMD_QUEUE_USER_PATH):
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(CMD_QUEUE_USER_PATH))
@@ -254,9 +290,16 @@ func _poll_shim() -> void:
 	var f := FileAccess.open("user://brainlink_status.json", FileAccess.READ)
 	if f == null:
 		return
-	var parsed = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) == TYPE_DICTIONARY:
-		apply_shim_status(parsed)
+	var text := f.get_as_text().strip_edges()
+	if text.length() < 2 or not text.begins_with("{") or not text.ends_with("}"):
+		return
+	if text == _last_status_text:
+		return
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	_last_status_text = text
+	apply_shim_status(parsed)
 
 
 func apply_shim_status(data: Dictionary) -> void:

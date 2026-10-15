@@ -1,1 +1,1 @@
-[{"cmd": "send_ground_truth", "event_code": "mr"}, {"cmd": "send_ground_truth", "event_code": "ne"}, {"cmd": "send_ground_truth", "event_code": "mr"}, {"cmd": "send_ground_truth", "event_code": "mr"}, {"cmd": "send_ground_truth", "event_code": "ne"}, {"cmd": "connect", "memory_name": "brainlink_data", "status_path": "C:/Users/haqury/AppData/Roaming/Godot/app_userdata/GetLevelOfAMonkey/brainlink_status.json"}]
+[]

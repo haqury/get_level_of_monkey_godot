@@ -1,1 +1,1 @@
-{"shm_attached": false, "client_active": false, "connected": false, "event": "", "confidence": 0.0, "probs": {}, "heartbeat_ms": 1792051468333}
+{"shm_attached":true,"client_active":false,"connected":false,"event":"","confidence":0,"probs":{"ml":0,"mr":0.25,"mu":0,"md":0,"stop":0},"heartbeat_ms":1792063231352}
